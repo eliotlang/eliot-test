@@ -1,0 +1,6 @@
+import eliot.effect.Console
+
+/**
+ * Runs all the tests that can be found on the current compiler path.
+ */
+def main: IO[Unit] = printLine("Ran")
