@@ -1,6 +1,30 @@
 import eliot.effect.Console
+import eliot.effect.Throw
+import eliot.lang.Id
+import eliot.compiler.Reflect
+import eliot.test.Test
+import eliot.test.Assertion
+import eliot.collection.List
 
 /**
- * Runs all the tests that can be found on the current compiler path.
+ * Runs every test case declared anywhere in the program under the name `testCases`, printing each test's name
+ * followed by `PASS` or the failure message. Point the compiler at the source roots and run this module's
+ * `main` to execute the whole suite.
  */
-def main: IO[Unit] = printLine("Ran")
+def main: {Console} Unit =
+   namedValues[Test]("testCases").foreach(runTestCase)
+
+/**
+ * Runs a single test case: discharges its `Throw` on the pure `Id` carrier to an `Either`, then reports the name
+ * and outcome.
+ */
+private def runTestCase(testCase: Test): {Console} Unit = {
+   printLine(name(testCase))
+   printLine(resultText(runId(runThrow(body(testCase)))))
+}
+
+/**
+ * `PASS` for a completed test, or the raised assertion's message for a failed one.
+ */
+private def resultText(outcome: Either[AssertionError, Unit]): String =
+   foldEither(outcome, e -> message(e), u -> "PASS")

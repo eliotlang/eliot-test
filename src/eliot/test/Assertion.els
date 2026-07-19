@@ -1,0 +1,29 @@
+import eliot.effect.Throw
+import eliot.effect.Abort
+
+/**
+ * The error raised by a failing assertion, carrying a human-readable message describing what went wrong.
+ */
+data AssertionError(message: String)
+
+/**
+ * A trivially passing test body: it makes no assertion, so it never raises.
+ */
+def success: {Throw[AssertionError]} Unit = unit
+
+/**
+ * Fail the current test unconditionally with the given `reason`.
+ */
+def fail(reason: String): {Throw[AssertionError]} Unit = raise(AssertionError(reason))
+
+/**
+ * Assert that `condition` holds, failing with `reason` if it does not.
+ */
+def assertTrue(condition: Bool, reason: String): {Throw[AssertionError]} Unit =
+   if(condition, unit) else fail(reason)
+
+/**
+ * Assert that `expected` and `actual` are equal (by their `Eq` instance), failing with `reason` otherwise.
+ */
+def assertEquals[A ~ Eq](expected: A, actual: A, reason: String): {Throw[AssertionError]} Unit =
+   assertTrue(equals(expected, actual), reason)

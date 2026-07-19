@@ -1,0 +1,19 @@
+import eliot.effect.Throw
+import eliot.lang.Id
+import eliot.test.Assertion
+
+/**
+ * A single test case to run: a `name` to report it under, and a `body` that runs the test and raises an
+ * `AssertionError` if it fails.
+ *
+ * The effect-row field type `{Throw[AssertionError]} Unit` makes `TestCase` generic over the effect carrier its
+ * body runs on; `Test` pins that carrier for the values the runner collects.
+ */
+data TestCase(name: String, body: {Throw[AssertionError]} Unit)
+
+/**
+ * A collectable test case. Test bodies run purely on the identity carrier `Id`, so a body may only *assert*
+ * (raise an `AssertionError`) — it performs no I/O. This is the concrete type every test module declares its
+ * `testCases` under, so the runner can gather them all with `namedValues`.
+ */
+type Test = TestCase[ThrowCarrier[AssertionError, Id]]

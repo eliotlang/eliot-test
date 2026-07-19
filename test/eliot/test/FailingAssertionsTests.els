@@ -1,0 +1,5 @@
+import eliot.test.Assertion
+import eliot.test.Test
+
+def testCases: Test =
+   TestCase("fail should report its message", fail("expected this test to fail"))

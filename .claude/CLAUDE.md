@@ -19,23 +19,40 @@ A file is a module: `src/eliot/test/Test.els` is module `eliot.test.Test`. The w
 three tiny modules plus a self-test:
 
 - `eliot.test.Test` — `data TestCase(name, body)`, where `body: {Throw[AssertionError]} Unit`. A test
-  is a name and an effectful body.
-- `eliot.test.Assertion` — `data AssertionError(message)` and `def success`. **Assertions signal
-  failure by raising `AssertionError` through the `Throw` effect**; a passing assertion returns
-  `unit`. This is why a `TestCase` body carries the `{Throw[AssertionError]}` effect row.
-- `eliot.test.Runner` — `def main: IO[Unit]`, the executable entry point.
+  is a name and an effectful body. That effect-row field makes `TestCase` **generic over its effect
+  carrier** (the `{…}` sugar lifts an inferable carrier `F[_]` onto the type — it is exactly
+  `data TestCase[auto F[_] ~ Throw[AssertionError]](name, body: F[Unit])`). The module also declares the
+  alias **`type Test = TestCase[ThrowCarrier[AssertionError, Id]]`**, which *pins* that carrier to the
+  pure identity carrier `Id`. Pinning is required: values gathered by reflection must be a single
+  concrete monomorphic type, and a top-level `def` whose type has an unconstrained `auto` carrier
+  cannot be signature-checked (nothing determines the carrier). Pinning to `Id` also means a test body
+  may only **assert** (raise via `Throw`) — it performs no I/O, since `Id` has no `Suspend` instance.
+- `eliot.test.Assertion` — `data AssertionError(message)` plus the assertion API. **Assertions signal
+  failure by raising `AssertionError` through the `Throw` effect**; a passing assertion returns `unit`.
+  This is why a `TestCase` body carries the `{Throw[AssertionError]}` effect row. Provides `success`
+  (a body that never fails), `fail(reason)`, `assertTrue(condition, reason)`, and
+  `assertEquals(expected, actual, reason)` (over any `Eq`). `assertTrue` is `if(condition, unit) else
+  fail(reason)` — `else` (from `eliot.effect.Abort`) discharges the `if`'s `Abort`, leaving just
+  `{Throw[AssertionError]}`.
+- `eliot.test.Runner` — `def main: {Console} Unit`, the executable entry point. For each collected
+  test it discharges the body's `Throw` on `Id` (`runId(runThrow(body(testCase)))` → `Either[AssertionError,
+  Unit]`) and prints the test name followed by `PASS` or the failure message.
 
 **The one architectural idea worth internalizing: tests register by name, via compile-time
 reflection — there is no central list, no annotations, no import wiring.** The runner calls
-`namedValues[TestCase]("testCases")` (from `eliot.compiler.Reflect`), which reifies *every*
-top-level value literally named `testCases`, of type `TestCase`, across all modules on the compiler
-path. To add a test, declare `def testCases: TestCase = TestCase("...", body)` in any module inside a
-compiled source root — `test/eliot/test/BasicAssertionsTests.els` is the worked example. It is
-picked up simply by being on the path; nothing references it.
+`namedValues[Test]("testCases")` (from `eliot.compiler.Reflect`), which reifies *every* top-level
+value literally named `testCases`, of type `Test`, across all modules on the compiler path. To add a
+test, declare `def testCases: Test = TestCase("...", body)` in any module inside a compiled source
+root — `test/eliot/test/BasicAssertionsTests.els` is the worked example. It is picked up simply by
+being on the path; nothing references it. (One `testCases` per module — the reflection gathers one
+value per module under that name, the way `PluginRegistry` gathers `contribution`.)
 
-> `src/eliot/test/Runner.els` is currently a work-in-progress stub (`.foldLeft()` is unfinished, so
-> `src` does not compile on its own yet). The prebuilt `target/Runner.jar` is from an earlier
-> compilable state and just prints `Ran`.
+The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, which prints each test's
+name and its `PASS`/failure line.
+
+> **Requires effect-row-in-`data` support in the compiler** (commit "Effect-row sugar in data fields:
+> lift carrier onto the data type"). Older compiler checkouts reject `data TestCase(body:
+> {Throw[AssertionError]} Unit)` with "Cannot resolve type / Cannot quote neutral value".
 
 ## Building and running (compiler CLI)
 
