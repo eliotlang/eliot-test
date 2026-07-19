@@ -1,4 +1,3 @@
-import eliot.effect.Throw
 import eliot.lang.Id
 import eliot.test.Assertion
 
