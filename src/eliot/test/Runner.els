@@ -12,13 +12,13 @@ import eliot.collection.List
  * `main` to execute the whole suite.
  */
 def main: {Console} Unit =
-   namedValues[Test]("testCases").foreach(runTestCase)
+   namedValues[TestCase]("testCases").foreach(runTestCase)
 
 /**
  * Runs a single test case: discharges its `Throw` on the pure `Id` carrier to an `Either`, then reports the name
  * and outcome.
  */
-private def runTestCase(testCase: Test): {Console} Unit = {
+private def runTestCase(testCase: TestCase): {Console} Unit = {
    printLine(name(testCase))
    printLine(resultText(runId(runThrow(body(testCase)))))
 }

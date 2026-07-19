@@ -6,17 +6,12 @@ import eliot.test.Assertion
  * A single test case to run: a `name` to report it under, and a `body` that runs the test and raises an
  * `AssertionError` if it fails.
  *
- * The effect-row field type `{Throw[AssertionError]} Unit` makes `TestCase` generic over the effect carrier its
- * body runs on; `Test` pins that carrier for the values the runner collects.
+ * The pinned effect-row field `{Throw[AssertionError] | Id} Unit` stores the body as a concrete suspended
+ * computation on the pure identity base `Id`: a body may only *assert* (raise an `AssertionError`) — it can
+ * never perform I/O. Every test module declares its cases under the name `testCases` with this type, so the
+ * runner can gather them all with `namedValues`.
  */
-data TestCase(name: String, body: {Throw[AssertionError]} Unit)
-
-/**
- * A collectable test case. Test bodies run purely on the identity carrier `Id`, so a body may only *assert*
- * (raise an `AssertionError`) — it performs no I/O. This is the concrete type every test module declares its
- * `testCases` under, so the runner can gather them all with `namedValues`.
- */
-type Test = TestCase[ThrowCarrier[AssertionError, Id]]
+data TestCase(name: String, body: {Throw[AssertionError] | Id} Unit)
 
 /**
  * A definition of a test case. The "what" and "what should it do" part.
@@ -29,5 +24,5 @@ infix none def should(what: String, acceptanceDescription: String): TestCaseDefi
 /**
  * Give a body to a test case definition.
  */
-infix none below should def in(definition: TestCaseDefinition, body: ThrowCarrier[AssertionError, Id, Unit]): Test =
+infix none below should def in(definition: TestCaseDefinition, body: {Throw[AssertionError] | Id} Unit): TestCase =
    TestCase(definition.what, body)
