@@ -17,3 +17,17 @@ data TestCase(name: String, body: {Throw[AssertionError]} Unit)
  * `testCases` under, so the runner can gather them all with `namedValues`.
  */
 type Test = TestCase[ThrowCarrier[AssertionError, Id]]
+
+/**
+ * A definition of a test case. The "what" and "what should it do" part.
+ */
+data TestCaseDefinition(what: String, acceptanceDescription: String)
+
+infix none def should(what: String, acceptanceDescription: String): TestCaseDefinition =
+   TestCaseDefinition(what, acceptanceDescription)
+
+/**
+ * Give a body to a test case definition.
+ */
+infix none below should def in(definition: TestCaseDefinition, body: ThrowCarrier[AssertionError, Id, Unit]): Test =
+   TestCase(definition.what, body)
