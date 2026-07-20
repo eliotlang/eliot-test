@@ -1,8 +1,19 @@
+import eliot.lang.Id
+import eliot.collection.List
 import eliot.test.Assertion
 import eliot.test.Test
 
-def testCases: Test = {
+def testCases: {State[List[TestCase]] | Id} Unit = {
    "equals" should "pass when given two equal strings" in {
       "hello" shouldBe "hello"
+   }
+   "expect" should "pass when the body raises the expected error" in {
+      expect("boom", raise("boom"))
+   }
+   "expect" should "fail when the body raises a different error" in {
+      expect(AssertionError("does not equal"), expect("boom", raise("bang")))
+   }
+   "expect" should "fail when the body raises no error" in {
+      expect(AssertionError("expected an error but none was raised"), expect(AssertionError("boom"), success))
    }
 }

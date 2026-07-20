@@ -1,8 +1,17 @@
+import eliot.lang.Id
 
 /**
  * The error raised by a failing assertion, carrying a human-readable message describing what went wrong.
  */
 data AssertionError(message: String)
+
+/**
+ * Two assertion errors are equal when they carry the same message, which lets `expect` check for a specific
+ * assertion failure.
+ */
+implement Eq[AssertionError] {
+   def equals(a: AssertionError, b: AssertionError): Bool = message(a) == message(b)
+}
 
 /**
  * A trivially passing test body: it makes no assertion, so it never raises.
@@ -13,6 +22,14 @@ def success: {Throw[AssertionError]} Unit = unit
  * Fail the current test unconditionally with the given `reason`.
  */
 def fail(reason: String): {Throw[AssertionError]} Unit = raise(AssertionError(reason))
+
+/**
+ * Expect the given `error` to be raised by `body`: passes when the raised error equals `error`, fails when the
+ * body raises a different error or completes without raising.
+ */
+def expect[E ~ Eq](error: E, body: {Throw[E] | Id} Unit): {Throw[AssertionError]} Unit =
+   body.runThrow.runId
+      .foldEither(raised -> raised shouldBe error, _ -> fail("expected an error but none was raised"))
 
 /**
  * Assert that `expected` and `actual` are equal (by their `Eq` instance), failing with `reason` otherwise.
