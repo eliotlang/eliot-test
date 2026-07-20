@@ -1,4 +1,5 @@
 import eliot.lang.Id
+import eliot.collection.List
 import eliot.test.Assertion
 
 /**
@@ -7,10 +8,11 @@ import eliot.test.Assertion
  *
  * The pinned effect-row field `{Throw[AssertionError] | Id} Unit` stores the body as a concrete suspended
  * computation on the pure identity base `Id`: a body may only *assert* (raise an `AssertionError`) — it can
- * never perform I/O. Every test module declares its cases under the name `testCases` with this type, so the
- * runner can gather them all with `namedValues`.
+ * never perform I/O.
  */
 data TestCase(name: String, body: {Throw[AssertionError] | Id} Unit)
+
+type Test = {State[List[TestCase]] | Id} Unit
 
 /**
  * A definition of a test case. The "what" and "what should it do" part.
@@ -21,7 +23,7 @@ infix none def should(what: String, acceptanceDescription: String): TestCaseDefi
    TestCaseDefinition(what, acceptanceDescription)
 
 /**
- * Give a body to a test case definition.
+ * Give a body to a test case definition and register the completed case into the enclosing suite.
  */
-infix none below should def in(definition: TestCaseDefinition, body: {Throw[AssertionError] | Id} Unit): TestCase =
-   TestCase(definition.what, body)
+infix none below should def in(definition: TestCaseDefinition, body: {Throw[AssertionError] | Id} Unit): {State[List[TestCase]] | Id} Unit =
+   updateState(cases -> append(cases, TestCase(definition.what, body)))

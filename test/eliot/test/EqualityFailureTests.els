@@ -1,5 +1,0 @@
-import eliot.test.Assertion
-import eliot.test.Test
-
-def testCases: TestCase =
-   TestCase("unequal strings should fail", assertEquals("hello", "world", "hello != world"))

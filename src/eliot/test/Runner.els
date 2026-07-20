@@ -10,7 +10,16 @@ import eliot.collection.List
  * `main` to execute the whole suite.
  */
 def main: {Console} Unit =
-   namedValues[TestCase]("testCases").foreach(runTestCase)
+   namedValues[Test]("testCases").foreach(runSuite)
+
+/**
+ * Runs one module's suite: each collected test case in declaration order.
+ */
+private def runSuite(suite: Test): {Console} Unit =
+   suite
+     .runStateToValue(emptyList)
+     .runId
+     .foreach(runTestCase)
 
 /**
  * Runs a single test case: discharges its `Throw` on the pure `Id` carrier to an `Either`, then reports the name
