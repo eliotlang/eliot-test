@@ -3,14 +3,14 @@ import eliot.lang.Id
 /**
  * The error raised by a failing assertion, carrying a human-readable message describing what went wrong.
  */
-data AssertionError(message: String)
+data AssertionError(errorMessage: String)
 
 /**
  * Two assertion errors are equal when they carry the same message, which lets `expect` check for a specific
  * assertion failure.
  */
 implement Eq[AssertionError] {
-   def equals(a: AssertionError, b: AssertionError): Bool = message(a) == message(b)
+   def equals(a: AssertionError, b: AssertionError): Bool = errorMessage(a) == errorMessage(b)
 }
 
 /**
@@ -36,3 +36,11 @@ def expect[E ~ Eq](error: E, body: {Throw[E] | Id} Unit): {Throw[AssertionError]
  */
 infix def shouldBe[A ~ Eq](actual: A, expected: A): {Throw[AssertionError]} Unit =
    if (actual == expected) unit else fail("does not equal")
+
+/**
+ * Rewrite the failure message: runs `body` and, when it raises an `AssertionError`, re-raises it with
+ * `newMessage` as its message. A passing body is left untouched.
+ */
+infix left below shouldBe def message(body: {Throw[AssertionError] | Id} Unit, newMessage: String): {Throw[AssertionError]} Unit =
+   body.runThrow.runId
+      .foldEither(_ -> fail(newMessage), _ -> success)

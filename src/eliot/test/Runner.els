@@ -34,4 +34,4 @@ private def runTestCase(testCase: TestCase): {Console} Unit = {
  * `PASS` for a completed test, or the raised assertion's message for a failed one.
  */
 private def resultText(outcome: Either[AssertionError, Unit]): String =
-   outcome.foldEither(e -> message(e), u -> "PASS")
+   outcome.foldEither(e -> errorMessage(e), u -> "PASS")

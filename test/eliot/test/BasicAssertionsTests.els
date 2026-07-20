@@ -16,4 +16,10 @@ def testCases: Test = {
    "expect" should "fail when the body raises no error" in {
       expect(AssertionError("expected an error but none was raised"), expect(AssertionError("boom"), success))
    }
+   "message" should "rewrite the message of a failing assertion" in {
+      expect(AssertionError("values differ"), "a" shouldBe "b" message "values differ")
+   }
+   "message" should "leave a passing body passing" in {
+      "a" shouldBe "a" message "should not surface"
+   }
 }
