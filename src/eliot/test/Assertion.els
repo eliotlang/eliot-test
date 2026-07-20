@@ -15,13 +15,7 @@ def success: {Throw[AssertionError]} Unit = unit
 def fail(reason: String): {Throw[AssertionError]} Unit = raise(AssertionError(reason))
 
 /**
- * Assert that `condition` holds, failing with `reason` if it does not.
- */
-def assertTrue(condition: Bool, reason: String): {Throw[AssertionError]} Unit =
-   if(condition, unit) else fail(reason)
-
-/**
  * Assert that `expected` and `actual` are equal (by their `Eq` instance), failing with `reason` otherwise.
  */
-def assertEquals[A ~ Eq](expected: A, actual: A, reason: String): {Throw[AssertionError]} Unit =
-   assertTrue(equals(expected, actual), reason)
+infix def shouldBe[A ~ Eq](actual: A, expected: A): {Throw[AssertionError]} Unit =
+   if (actual == expected) unit else fail("does not equal")

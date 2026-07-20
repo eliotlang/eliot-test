@@ -3,9 +3,6 @@ import eliot.test.Test
 
 def testCases: Test = {
    "equals" should "pass when given two equal strings" in {
-      assertEquals("hello", "hello", "strings should match")
-   }
-   "assertTrue" should "accept a true condition" in {
-      assertTrue(true, "true must be accepted")
+      "hello" shouldBe "hello"
    }
 }

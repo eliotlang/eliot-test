@@ -17,7 +17,7 @@ def main: {Console} Unit =
  */
 private def runSuite(suite: Test): {Console} Unit =
    suite
-     .runStateToValue(emptyList)
+     .runStateToFinalState(emptyList)
      .runId
      .foreach(runTestCase)
 
