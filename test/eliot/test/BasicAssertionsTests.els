@@ -3,7 +3,7 @@ import eliot.collection.List
 import eliot.test.Assertion
 import eliot.test.Test
 
-def testCases: {State[List[TestCase]] | Id} Unit = {
+def testCases: Test = {
    "equals" should "pass when given two equal strings" in {
       "hello" shouldBe "hello"
    }
