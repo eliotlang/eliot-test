@@ -26,4 +26,4 @@ infix none def should(what: String, acceptanceDescription: String): TestCaseDefi
  * Give a body to a test case definition and register the completed case into the enclosing suite.
  */
 infix none below should def in(definition: TestCaseDefinition, body: {Throw[AssertionError] | Id} Unit): {State[List[TestCase]] | Id} Unit =
-   updateState(cases -> append(cases, TestCase(definition.what, body)))
+   updateState(cases -> append(cases, TestCase(definition.what ++ " should " ++ definition.acceptanceDescription, body)))
