@@ -23,13 +23,27 @@ private def runSuite(suite: Test): {Console} Unit =
 
 /**
  * Runs a single test case: discharges its `Throw` on the pure `Id` carrier to an `Either`, then reports the name
- * and outcome.
+ * and outcome — a failure's detail lines indented under its header.
  */
 private def runTestCase(testCase: TestCase): {Console} Unit = {
    val outcome = testCase.body.runThrow.runId
 
    outcome.foldEither(
-      e -> printLine("\u001B[1;31m ✗ \u001B[2;31m" ++ testCase.name ++ "\u001B[0m"),
+      e -> {
+         printLine("\u001B[1;31m ✗ " ++ testCase.name ++ "\u001B[0m")
+         e.describe.foreach(line -> printLine("\u001B[31m      " ++ line ++ "\u001B[0m"))
+      },
       _ -> printLine("\u001B[1;32m ✔ \u001B[2;32m" ++ testCase.name ++ "\u001B[0m")
    )
+}
+
+/**
+ * Renders a failure shape into presentation lines — the one place deciding how each `AssertionError`
+ * constructor reads in the report.
+ */
+private def describe(error: AssertionError): List[String] = error match {
+   case Failed(reason)             -> append(empty, reason)
+   case NotEqual(expected, actual) -> append(append(empty, "expected: " ++ expected), "  actual: " ++ actual)
+   case UnexpectedlyEqual(equal)   -> append(empty, "expected a value different from: " ++ equal)
+   case NoErrorRaised(expected)    -> append(append(empty, "expected error: " ++ expected), "but no error was raised")
 }

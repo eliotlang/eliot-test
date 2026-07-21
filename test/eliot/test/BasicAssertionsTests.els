@@ -4,20 +4,35 @@ import eliot.test.Assertion
 import eliot.test.Test
 
 def testCases: Test = {
-   "equals" should "pass when given two equal strings" in {
+   "shouldBe" should "pass when given two equal strings" in {
       "hello" shouldBe "hello"
+   }
+   "shouldBe" should "raise NotEqual carrying both rendered values" in {
+      expect(NotEqual("hello", "hell"), "hell" shouldBe "hello")
+   }
+   "shouldNotBe" should "pass when given two different strings" in {
+      "hello" shouldNotBe "hell"
+   }
+   "shouldNotBe" should "raise UnexpectedlyEqual carrying the shared value" in {
+      expect(UnexpectedlyEqual("hello"), "hello" shouldNotBe "hello")
+   }
+   "success" should "raise nothing" in {
+      success
+   }
+   "fail" should "raise Failed carrying the given reason" in {
+      expect(Failed("boom"), fail("boom"))
    }
    "expect" should "pass when the body raises the expected error" in {
       expect("boom", raise("boom"))
    }
-   "expect" should "fail when the body raises a different error" in {
-      expect(AssertionError("does not equal"), expect("boom", raise("bang")))
+   "expect" should "raise NotEqual when the body raises a different error" in {
+      expect(NotEqual("boom", "bang"), expect("boom", raise("bang")))
    }
-   "expect" should "fail when the body raises no error" in {
-      expect(AssertionError("expected an error but none was raised"), expect(AssertionError("boom"), success))
+   "expect" should "raise NoErrorRaised when the body raises no error" in {
+      expect(NoErrorRaised(show(Failed("boom"))), expect(Failed("boom"), success))
    }
-   "message" should "rewrite the message of a failing assertion" in {
-      expect(AssertionError("values differ"), "a" shouldBe "b" message "values differ")
+   "message" should "rewrite any failure to Failed with the new message" in {
+      expect(Failed("values differ"), "a" shouldBe "b" message "values differ")
    }
    "message" should "leave a passing body passing" in {
       "a" shouldBe "a" message "should not surface"
