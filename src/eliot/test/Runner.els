@@ -28,12 +28,8 @@ private def runSuite(suite: Test): {Console} Unit =
 private def runTestCase(testCase: TestCase): {Console} Unit = {
    val outcome = testCase.body.runThrow.runId
 
-   printLine(name(testCase))
-   printLine(resultText(outcome))
+   outcome.foldEither(
+      e -> printLine("\u001B[0;31m ✗ " ++ testCase.name ++ "\u001B[0m"),
+      _ -> printLine("\u001B[0;32m ✔ " ++ testCase.name ++ "\u001B[0m")
+   )
 }
-
-/**
- * `PASS` for a completed test, or the raised assertion's message for a failed one.
- */
-private def resultText(outcome: Either[AssertionError, Unit]): String =
-   outcome.foldEither(e -> errorMessage(e), u -> "PASS")
