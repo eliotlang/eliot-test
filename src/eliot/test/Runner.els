@@ -26,8 +26,10 @@ private def runSuite(suite: Test): {Console} Unit =
  * and outcome.
  */
 private def runTestCase(testCase: TestCase): {Console} Unit = {
+   val outcome = testCase.body.runThrow.runId
+
    printLine(name(testCase))
-   printLine(resultText(runId(runThrow(body(testCase)))))
+   printLine(resultText(outcome))
 }
 
 /**
