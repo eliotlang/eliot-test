@@ -18,41 +18,54 @@ meta-information.
 A file is a module: `src/eliot/test/Test.els` is module `eliot.test.Test`. The whole framework is
 three tiny modules plus a self-test:
 
-- `eliot.test.Test` — `data TestCase(name, body)`, where `body: {Throw[AssertionError]} Unit`. A test
-  is a name and an effectful body. That effect-row field makes `TestCase` **generic over its effect
-  carrier** (the `{…}` sugar lifts an inferable carrier `F[_]` onto the type — it is exactly
-  `data TestCase[auto F[_] ~ Throw[AssertionError]](name, body: F[Unit])`). The module also declares the
-  alias **`type Test = TestCase[ThrowCarrier[AssertionError, Id]]`**, which *pins* that carrier to the
-  pure identity carrier `Id`. Pinning is required: values gathered by reflection must be a single
-  concrete monomorphic type, and a top-level `def` whose type has an unconstrained `auto` carrier
-  cannot be signature-checked (nothing determines the carrier). Pinning to `Id` also means a test body
-  may only **assert** (raise via `Throw`) — it performs no I/O, since `Id` has no `Suspend` instance.
-- `eliot.test.Assertion` — `data AssertionError(message)` plus the assertion API. **Assertions signal
+- `eliot.test.Test` — the DSL. A **test case** is `data TestCase(name: String, body: {Throw[AssertionError]
+  | Id} Unit)`: a name plus a body that raises an `AssertionError` if it fails. That body field is a
+  **pinned effect row** — the concrete `ThrowCarrier[AssertionError, Id, Unit]` stack over the pure
+  identity base `Id` (stored `data`-field rows must be pinned). Pinning to `Id` means a body may only
+  **assert** (raise via `Throw`), never do I/O, since `Id` has no `Suspend` instance.
+
+  A **suite** is `type Test = {Writer[List[TestCase]] | Id} Unit` — a `Writer` computation that
+  *accumulates* a `List[TestCase]` log (over `Id`). This is the type reflection gathers. It is a
+  `Writer`, not `State`, because a suite only ever *appends* cases and never reads back what has been
+  registered — the honest, minimal contract for a collector (`Writer` = append-only `State`; the log's
+  monoid is `Combine[List]` = concatenation).
+
+  Two infix combinators build a suite in direct style:
+  - `"what" should "acceptance"` → a `TestCaseDefinition` (`infix none def should`).
+  - `definition in { body }` → `tell(append(empty, TestCase(...)))` (`infix none below should def in`),
+    registering one case into the enclosing suite's Writer log. A `{ … }` block of `in` statements
+    *sequences*: each `tell` contributes a singleton `[TestCase]`, the blocks' logs join via
+    `Combine[List]`, so the suite collects **every** case in declaration order.
+- `eliot.test.Assertion` — `data AssertionError(errorMessage: String)` (with `Eq[AssertionError]` = equal
+  by message, so `expect` can check for a specific failure) plus the assertion API. **Assertions signal
   failure by raising `AssertionError` through the `Throw` effect**; a passing assertion returns `unit`.
-  This is why a `TestCase` body carries the `{Throw[AssertionError]}` effect row. Provides `success`
-  (a body that never fails), `fail(reason)`, `assertTrue(condition, reason)`, and
-  `assertEquals(expected, actual, reason)` (over any `Eq`). `assertTrue` is `if(condition, unit) else
-  fail(reason)` — `else` (from `eliot.effect.Abort`) discharges the `if`'s `Abort`, leaving just
-  `{Throw[AssertionError]}`.
-- `eliot.test.Runner` — `def main: {Console} Unit`, the executable entry point. For each collected
-  test it discharges the body's `Throw` on `Id` (`runId(runThrow(body(testCase)))` → `Either[AssertionError,
-  Unit]`) and prints the test name followed by `PASS` or the failure message.
+  This is why a body carries `{Throw[AssertionError]}`. Provides `success` (never raises),
+  `fail(reason)`, the infix `actual shouldBe expected` (over any `Eq` — `if(actual == expected) unit else
+  fail(...)`), `expect(error, body)` (passes iff `body` raises exactly `error`; runs `body.runThrow.runId`
+  → `Either` and folds it), and the infix `body message newMessage` (`infix left below shouldBe` — rewrites
+  a failing body's message).
+- `eliot.test.Runner` — `def main: {Console} Unit`, the executable entry point.
+  `namedValues[Test]("testCases").foreach(runSuite)` gathers every suite (see reflection below); `runSuite`
+  discharges the Writer to its accumulated list (`suite.runWriterToLog.runId`) and runs each case in
+  declaration order; `runTestCase` discharges the body's `Throw` on `Id` (`testCase.body.runThrow.runId` →
+  `Either[AssertionError, Unit]`) and prints a green `✔ name` or a red `✗ name`.
 
 **The one architectural idea worth internalizing: tests register by name, via compile-time
 reflection — there is no central list, no annotations, no import wiring.** The runner calls
 `namedValues[Test]("testCases")` (from `eliot.compiler.Reflect`), which reifies *every* top-level
-value literally named `testCases`, of type `Test`, across all modules on the compiler path. To add a
-test, declare `def testCases: Test = TestCase("...", body)` in any module inside a compiled source
-root — `test/eliot/test/BasicAssertionsTests.els` is the worked example. It is picked up simply by
-being on the path; nothing references it. (One `testCases` per module — the reflection gathers one
+value literally named `testCases`, of type `Test`, across all modules on the compiler path. To add
+tests, declare `def testCases: Test = { "…" should "…" in { … } … }` in any module inside a compiled
+source root — `test/eliot/test/BasicAssertionsTests.els` is the worked example. It is picked up simply
+by being on the path; nothing references it. (One `testCases` per module — the reflection gathers one
 value per module under that name, the way `PluginRegistry` gathers `contribution`.)
 
 The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, which prints each test's
-name and its `PASS`/failure line.
+name and its `✔`/`✗` line.
 
-> **Requires effect-row-in-`data` support in the compiler** (commit "Effect-row sugar in data fields:
-> lift carrier onto the data type"). Older compiler checkouts reject `data TestCase(body:
-> {Throw[AssertionError]} Unit)` with "Cannot resolve type / Cannot quote neutral value".
+> **Requires a recent compiler.** Needs pinned effect-row `data` fields (`data TestCase(body:
+> {Throw[AssertionError] | Id} Unit)`; older checkouts reject it with "Cannot resolve type / Cannot
+> quote neutral value") and the ambient **`Writer` effect** + **`Combine[List]` monoid** (shipped in the
+> compiler 2026-07-21 — `Writer` is `State` restricted to append-only, `Combine` gained `empty`).
 
 ## Building and running (compiler CLI)
 
