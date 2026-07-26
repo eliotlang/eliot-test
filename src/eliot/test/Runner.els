@@ -42,7 +42,7 @@ private def runTestCase(testCase: TestCase): {Console} Unit = {
  * constructor reads in the report.
  */
 private def describe(error: AssertionError): List[String] = error match {
-   case Failed(reason)             -> append(empty, reason)
+   case Failed(reason)             -> append(empty, "\u001B[0;1;31m" ++ reason)
    case NotEqual(expected, actual) -> append(append(empty, "\u001B[0;2;37mexpected \u001B[0;1;32m" ++ expected), "\u001B[0;2;37mactual\u001B[0;1;31m   " ++ actual)
    case UnexpectedlyEqual(equal)   -> append(empty, "expected a value different from: " ++ equal)
    case NoErrorRaised(expected)    -> append(append(empty, "expected error: " ++ expected), "but no error was raised")
