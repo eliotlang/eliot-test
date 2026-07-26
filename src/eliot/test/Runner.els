@@ -30,10 +30,10 @@ private def runTestCase(testCase: TestCase): {Console} Unit = {
 
    outcome.foldEither(
       e -> {
-         printLine("\u001B[1;31m ✗ \u001B[1;37m" ++ testCase.subject ++ "\u001B[0m")
-         e.describe.foreach(line -> printLine("\u001B[31m      " ++ line ++ "\u001B[0m"))
+         printLine("\u001B[1;31m | ✗ \u001B[1;31m" ++ testCase.subject ++ "\u001B[2;37m › \u001B[0;1;37m" ++ testCase.shouldPhrase ++ "\u001B[0m")
+         e.describe.foreach(line -> printLine("\u001B[1;31m | \u001B[0m  " ++ line ++ "\u001B[0m"))
       },
-      _ -> printLine("\u001B[1;32m ✔ \u001B[1;37m" ++ testCase.subject ++ "\u001B[2;37m · 1 passed\u001B[0m")
+      _ -> printLine("\u001B[1;32m ✔ \u001B[1;37m" ++ testCase.subject ++ "\u001B[0;2;37m · 1 passed\u001B[0m")
    )
 }
 
@@ -43,7 +43,7 @@ private def runTestCase(testCase: TestCase): {Console} Unit = {
  */
 private def describe(error: AssertionError): List[String] = error match {
    case Failed(reason)             -> append(empty, reason)
-   case NotEqual(expected, actual) -> append(append(empty, "expected: " ++ expected), "  actual: " ++ actual)
+   case NotEqual(expected, actual) -> append(append(empty, "\u001B[0;2;37mexpected \u001B[0;1;32m" ++ expected), "\u001B[0;2;37mactual\u001B[0;1;31m   " ++ actual)
    case UnexpectedlyEqual(equal)   -> append(empty, "expected a value different from: " ++ equal)
    case NoErrorRaised(expected)    -> append(append(empty, "expected error: " ++ expected), "but no error was raised")
 }
