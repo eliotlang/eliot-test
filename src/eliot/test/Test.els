@@ -1,6 +1,7 @@
 import eliot.lang.Id
 import eliot.collection.List
 import eliot.test.Assertion
+import eliot.carrier.Effect
 
 /**
  * A single test case to run: a `name` to report it under, and a `body` that runs the test and raises an
@@ -10,20 +11,15 @@ import eliot.test.Assertion
  * computation on the pure identity base `Id`: a body may only *assert* (raise an `AssertionError`) — it can
  * never perform I/O.
  */
-data TestCase(name: String, body: {Throw[AssertionError] | Id} Unit)
+data TestCase(subject: String, shouldPhrase: String, body: {Throw[AssertionError] | Id} Unit)
 
 type Test = {Writer[List[TestCase]] | Id} Unit
 
-/**
- * A definition of a test case. The "what" and "what should it do" part.
- */
-data TestCaseDefinition(what: String, acceptanceDescription: String)
-
-infix none def should(what: String, acceptanceDescription: String): TestCaseDefinition =
-   TestCaseDefinition(what, acceptanceDescription)
+infix none def should(subject: String, shouldPhrase: String): TestCase =
+   TestCase(subject, shouldPhrase, pure(unit))
 
 /**
  * Give a body to a test case definition and register the completed case into the enclosing suite.
  */
-infix none below should def in(definition: TestCaseDefinition, body: {Throw[AssertionError] | Id} Unit): {Writer[List[TestCase]] | Id} Unit =
-   tell(append(empty, TestCase(definition.what ++ " should " ++ definition.acceptanceDescription, body)))
+infix none below should def in(testCase: TestCase, body: {Throw[AssertionError] | Id} Unit): {Writer[List[TestCase]] | Id} Unit =
+   tell(append(empty, TestCase(testCase.subject, testCase.shouldPhrase, body)))
