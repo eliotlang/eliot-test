@@ -30,10 +30,10 @@ private def runTestCase(testCase: TestCase): {Console} Unit = {
 
    outcome.foldEither(
       e -> {
-         printLine("\u001B[1;31m ✗ " ++ testCase.subject ++ "\u001B[0m")
+         printLine("\u001B[1;31m ✗ \u001B[1;37m" ++ testCase.subject ++ "\u001B[0m")
          e.describe.foreach(line -> printLine("\u001B[31m      " ++ line ++ "\u001B[0m"))
       },
-      _ -> printLine("\u001B[1;32m ✔ \u001B[2;32m" ++ testCase.subject ++ "\u001B[0m")
+      _ -> printLine("\u001B[1;32m ✔ \u001B[1;37m" ++ testCase.subject ++ "\u001B[2;37m · 1 passed\u001B[0m")
    )
 }
 
