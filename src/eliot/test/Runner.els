@@ -16,9 +16,7 @@ def main: {Console} Unit =
  * Runs one module's suite: each collected test case in declaration order.
  */
 private def runSuite(suite: Test): {Console} Unit =
-   suite
-     .runWriterToLog
-     .runId
+   runId(runWriterToLog(suite))
      .foreach(runTestCase)
 
 /**
@@ -26,14 +24,14 @@ private def runSuite(suite: Test): {Console} Unit =
  * and outcome — a failure's detail lines indented under its header.
  */
 private def runTestCase(testCase: TestCase): {Console} Unit = {
-   val outcome = testCase.body.runThrow.runId
+   val outcome = runId(runThrow(testCase.body))
 
    outcome.foldEither(
       e -> {
-         printLine("\u001B[1;31m | ✗ \u001B[1;31m" ++ testCase.subject ++ "\u001B[2;37m › \u001B[0;1;37m" ++ testCase.shouldPhrase ++ "\u001B[0m")
-         e.describe.foreach(line -> printLine("\u001B[1;31m | \u001B[0m  " ++ line ++ "\u001B[0m"))
+         printLine(" | ✗ ".ansiFail ++ testCase.subject.ansiFail ++ " › ".ansiNote ++ testCase.shouldPhrase.ansiHighlight)
+         e.describe.foreach(line -> printLine(" |   ".ansiFail ++ line))
       },
-      _ -> printLine("\u001B[1;32m ✔ \u001B[1;37m" ++ testCase.subject ++ "\u001B[0;2;37m · 1 passed\u001B[0m")
+      _ -> printLine(" ✔ ".ansiSuccess ++ testCase.subject.ansiHighlight ++ " · 1 passed".ansiNote)
    )
 }
 
@@ -42,8 +40,16 @@ private def runTestCase(testCase: TestCase): {Console} Unit = {
  * constructor reads in the report.
  */
 private def describe(error: AssertionError): List[String] = error match {
-   case Failed(reason)             -> append(empty, "\u001B[0;1;31m" ++ reason)
-   case NotEqual(expected, actual) -> append(append(empty, "\u001B[0;2;37mexpected \u001B[0;1;32m" ++ expected), "\u001B[0;2;37mactual\u001B[0;1;31m   " ++ actual)
-   case UnexpectedlyEqual(equal)   -> append(empty, "\u001B[0;2;37mexpected a value different from\u001B[0;1;31m " ++ equal)
-   case NoErrorRaised(expected)    -> append(append(empty, "\u001B[0;2;37mexpected error\u001B[0;1;32m " ++ expected), "\u001B[0;1;31mbut no error was raised")
+   case Failed(reason)             -> append(empty, reason.ansiFail)
+   case NotEqual(expected, actual) -> append(append(empty, "expected ".ansiNote ++ expected.ansiSuccess), "actual   ".ansiNote ++ actual.ansiFail)
+   case UnexpectedlyEqual(equal)   -> append(empty, "expected a value different from ".ansiNote ++ equal.ansiFail)
+   case NoErrorRaised(expected)    -> append(append(empty, "expected error ".ansiNote ++ expected.ansiSuccess), "but no error was raised".ansiFail)
 }
+
+private def ansiFail(str: String): String = "\u001B[1;31m" ++ str ++ "\u001B[0m"
+
+private def ansiSuccess(str: String): String = "\u001B[1;32m" ++ str ++ "\u001B[0m"
+
+private def ansiHighlight(str: String): String = "\u001B[1;37m" ++ str ++ "\u001B[0m"
+
+private def ansiNote(str: String): String = "\u001B[2;37m" ++ str ++ "\u001B[0m"

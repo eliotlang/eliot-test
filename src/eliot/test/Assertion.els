@@ -67,7 +67,7 @@ def fail(reason: String): {Throw[AssertionError]} Unit = raise(Failed(reason))
  * `NotEqual` when the body raises a different error and `NoErrorRaised` when it completes without raising.
  */
 def expect[E ~ Eq & Show](error: E, body: {Throw[E] | Id} Unit): {Throw[AssertionError]} Unit =
-   body.runThrow.runId
+   runId(runThrow(body))
       .foldEither(raised -> raised shouldBe error, _ -> raise(NoErrorRaised(show(error))))
 
 /**
@@ -89,5 +89,5 @@ infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A): {Thr
  * `Failed` carrying `newMessage`. A passing body is left untouched.
  */
 infix left below shouldBe def message(body: {Throw[AssertionError] | Id} Unit, newMessage: String): {Throw[AssertionError]} Unit =
-   body.runThrow.runId
+   runId(runThrow(body))
       .foldEither(_ -> fail(newMessage), _ -> success)
