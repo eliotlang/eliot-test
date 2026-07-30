@@ -58,8 +58,6 @@ three tiny modules plus a self-test:
   result parameter declares no effect row, so a `{Console}` computation may not be routed through it (rule 4 —
   a plain type parameter is a payload). Keep the fold's body pure and `.foreach(printLine)` the lines it yields.
 
-  Note `Int` has no `Eq` instance — compare counts with `<=`/`>=`, not `==`.
-
 **The one architectural idea worth internalizing: tests register by name, via compile-time
 reflection — there is no central list, no annotations, no import wiring.** The runner calls
 `namedValues[Test]("testCases")` (from `eliot.compiler.Reflect`), which reifies *every* top-level

@@ -45,7 +45,7 @@ private def report(subjectName: String, failures: List[List[String]]): List[Stri
  */
 private def header(subjectName: String, passedCount: Int, failedCount: Int): String =
    fold(
-      failedCount <= 0,
+      failedCount == 0,
       " ✔ ".ansiSuccess ++ subjectName.ansiHighlight ++ (" · " ++ show(passedCount) ++ " passed").ansiNote,
       " ✗ ".ansiFail ++ subjectName.ansiHighlight ++ (" · " ++ show(passedCount) ++ " passed, ").ansiNote ++
          (show(failedCount) ++ " failed").ansiFail
