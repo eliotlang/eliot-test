@@ -46,9 +46,19 @@ three tiny modules plus a self-test:
   a failing body's message).
 - `eliot.test.Runner` — `def main: {Console} Unit`, the executable entry point.
   `namedValues[Test]("testCases").foreach(runSuite)` gathers every suite (see reflection below); `runSuite`
-  discharges the Writer to its accumulated list (`suite.runWriterToLog.runId`) and runs each case in
-  declaration order; `runTestCase` discharges the body's `Throw` on `Id` (`testCase.body.runThrow.runId` →
-  `Either[AssertionError, Unit]`) and prints a green `✔ name` or a red `✗ name`.
+  discharges the Writer to its accumulated list (`suite.runWriterToLog.runId`) and **groups it by `subject`**
+  (`List.groupBy`, so subjects appear in order of first mention). **One line is printed per subject, not per
+  case**: green `✔ subject · N passed` while everything passed, red `✗ subject · N passed, M failed` as soon as
+  anything did not, with each failure's `should` phrase and detail lines indented underneath.
+
+  The reporting is a pure-then-print split, and deliberately so: `runTestCase` discharges the body's `Throw` on
+  `Id` (`testCase.body.runThrow.runId` → `Either[AssertionError, Unit]`) and answers that case's **failure
+  lines** — empty exactly when it passed — so `report` derives both the counts and the detail body from the one
+  list, and `runSubject` is the only thing that prints. That split is also what makes it *compile*: `foldPair`'s
+  result parameter declares no effect row, so a `{Console}` computation may not be routed through it (rule 4 —
+  a plain type parameter is a payload). Keep the fold's body pure and `.foreach(printLine)` the lines it yields.
+
+  Note `Int` has no `Eq` instance — compare counts with `<=`/`>=`, not `==`.
 
 **The one architectural idea worth internalizing: tests register by name, via compile-time
 reflection — there is no central list, no annotations, no import wiring.** The runner calls
@@ -59,8 +69,8 @@ source root — `test/eliot/test/BasicAssertionsTests.els` is the worked example
 by being on the path; nothing references it. (One `testCases` per module — the reflection gathers one
 value per module under that name, the way `PluginRegistry` gathers `contribution`.)
 
-The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, which prints each test's
-name and its `✔`/`✗` line.
+The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, which prints one `✔`/`✗` line
+per test subject with its pass and failure counts.
 
 > **Requires a recent compiler.** Needs pinned effect-row `data` fields (`data TestCase(body:
 > {Throw[AssertionError] | Id} Unit)`; older checkouts reject it with "Cannot resolve type / Cannot

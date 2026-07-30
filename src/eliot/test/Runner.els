@@ -5,35 +5,62 @@ import eliot.test.Assertion
 import eliot.collection.List
 
 /**
- * Runs every test case declared anywhere in the program under the name `testCases`, printing each test's name
- * followed by `PASS` or the failure message. Point the compiler at the source roots and run this module's
- * `main` to execute the whole suite.
+ * Runs every test case declared anywhere in the program under the name `testCases`, printing one line per
+ * subject with its pass and failure counts, each failure detailed underneath. Point the compiler at the source
+ * roots and run this module's `main` to execute the whole suite.
  */
 def main: {Console} Unit =
    namedValues[Test]("testCases").foreach(runSuite)
 
 /**
- * Runs one module's suite: each collected test case in declaration order.
+ * Runs one module's suite: its collected test cases gathered by subject, subjects in order of first mention.
  */
 private def runSuite(suite: Test): {Console} Unit =
    runId(runWriterToLog(suite))
-     .foreach(runTestCase)
+     .groupBy(subject)
+     .foreach(runSubject)
 
 /**
- * Runs a single test case: discharges its `Throw` on the pure `Id` carrier to an `Either`, then reports the name
- * and outcome — a failure's detail lines indented under its header.
+ * Runs every case of one subject and reports them as a single line: the subject, how many of its cases passed
+ * and — only when there were any — how many failed, with each failure's detail lines following underneath.
  */
-private def runTestCase(testCase: TestCase): {Console} Unit = {
-   val outcome = runId(runThrow(testCase.body))
+private def runSubject(group: Pair[String, List[TestCase]]): {Console} Unit =
+   group
+      .foldPair(subjectName -> cases -> report(subjectName, cases.map(runTestCase)))
+      .foreach(printLine)
 
-   outcome.foldEither(
-      e -> {
-         printLine(" | ✗ ".ansiFail ++ testCase.subject.ansiFail ++ " › ".ansiNote ++ testCase.shouldPhrase.ansiHighlight)
-         e.describe.foreach(line -> printLine(" |   ".ansiFail ++ line))
-      },
-      _ -> printLine(" ✔ ".ansiSuccess ++ testCase.subject.ansiHighlight ++ " · 1 passed".ansiNote)
-   )
+/**
+ * One subject's report lines, built from its cases' failure lines: a case passed exactly when its lines are
+ * empty, so the header's counts and the detail body underneath both come from the same list.
+ */
+private def report(subjectName: String, failures: List[List[String]]): List[String] = {
+   val failedCount = failures.filter(lines -> fold(lines.isEmpty, false, true)).size
+
+   prepend(failures.flatten, header(subjectName, failures.size - failedCount, failedCount))
 }
+
+/**
+ * A subject's headline: green with just the pass count while everything passed, red and naming both counts as
+ * soon as anything did not.
+ */
+private def header(subjectName: String, passedCount: Int, failedCount: Int): String =
+   fold(
+      failedCount <= 0,
+      " ✔ ".ansiSuccess ++ subjectName.ansiHighlight ++ (" · " ++ show(passedCount) ++ " passed").ansiNote,
+      " ✗ ".ansiFail ++ subjectName.ansiHighlight ++ (" · " ++ show(passedCount) ++ " passed, ").ansiNote ++
+         (show(failedCount) ++ " failed").ansiFail
+   )
+
+/**
+ * Runs a single test case: discharges its `Throw` on the pure `Id` carrier to an `Either`, and answers the lines
+ * reporting its failure — its `should` phrase and the failure's detail lines — or no lines at all when it passed.
+ */
+private def runTestCase(testCase: TestCase): List[String] =
+   runId(runThrow(testCase.body))
+      .foldEither(
+         e -> prepend(e.describe.map(line -> " |   ".ansiFail ++ line), " | ✗ ".ansiFail ++ testCase.shouldPhrase.ansiHighlight),
+         _ -> empty
+      )
 
 /**
  * Renders a failure shape into presentation lines — the one place deciding how each `AssertionError`
