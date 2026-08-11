@@ -6,38 +6,64 @@ import eliot.collection.List
 
 /**
  * Runs every test case declared anywhere in the program under the name `testCases`, printing one line per
- * subject with its pass and failure counts, each failure detailed underneath. Point the compiler at the source
- * roots and run this module's `main` to execute the whole suite.
+ * subject with its pass and failure counts, each failure detailed underneath, and closing with one line
+ * summarizing the whole run. Point the compiler at the source roots and run this module's `main` to execute
+ * the whole suite.
  */
-def main: {Console} Unit =
-   namedValues[Test]("testCases").foreach(runSuite)
+def main: {Console} Unit = {
+   val caseFailures = namedValues[Test]("testCases").flatMap(runSuite)
+
+   printLine(summary(caseFailures))
+}
 
 /**
  * Runs one module's suite: its collected test cases gathered by subject, subjects in order of first mention.
+ * Answers every case's failure lines, so the closing summary counts the whole run the same way a subject
+ * counts its own cases.
  */
-private def runSuite(suite: Test): {Console} Unit =
+private def runSuite(suite: Test): {Console} List[List[String]] =
    runId(runWriterToLog(suite))
      .groupBy(subject)
-     .foreach(runSubject)
+     .flatMap(runSubject)
 
 /**
  * Runs every case of one subject and reports them as a single line: the subject, how many of its cases passed
  * and — only when there were any — how many failed, with each failure's detail lines following underneath.
  */
-private def runSubject(group: Pair[String, List[TestCase]]): {Console} Unit =
-   group
-      .foldPair(subjectName -> cases -> report(subjectName, cases.map(runTestCase)))
-      .foreach(printLine)
+private def runSubject(group: Pair[String, List[TestCase]]): {Console} List[List[String]] = {
+   val caseFailures = group.casesOf.map(runTestCase)
+
+   report(group.subjectOf, caseFailures).foreach(printLine)
+
+   caseFailures
+}
+
+/**
+ * The closing line of the whole run: green and all clear while every case passed, an inverted red band naming
+ * the failures as soon as any did not — the one line to read when the report scrolled past.
+ */
+private def summary(failureLines: List[List[String]]): String =
+   fold(
+      failureLines.passedCount == failureLines.size,
+      (" ✔ all clear · " ++ show(failureLines.passedCount) ++ " passed ").ansiSuccess,
+      (" ✗ " ++ show(failureLines.size - failureLines.passedCount) ++ " failed · " ++
+         show(failureLines.passedCount) ++ " passed ").ansiAlarm
+   )
 
 /**
  * One subject's report lines, built from its cases' failure lines: a case passed exactly when its lines are
  * empty, so the header's counts and the detail body underneath both come from the same list.
  */
-private def report(subjectName: String, failureLines: List[List[String]]): List[String] = {
-   val passedCount = failureLines.filter(isEmpty).size
+private def report(subjectName: String, failureLines: List[List[String]]): List[String] =
+   prepend(
+      failureLines.flatten,
+      header(subjectName, failureLines.passedCount, failureLines.size - failureLines.passedCount)
+   )
 
-   prepend(failureLines.flatten, header(subjectName, passedCount, failureLines.size - passedCount))
-}
+/**
+ * How many of these cases passed: a case reported no failure lines exactly when it did.
+ */
+private def passedCount(failureLines: List[List[String]]): Int = failureLines.filter(isEmpty).size
 
 /**
  * A subject's headline: green with just the pass count while everything passed, red and naming both counts as
@@ -73,7 +99,25 @@ private def describe(error: AssertionError): List[String] = error match {
    case NoErrorRaised(expected)    -> append(singleton("expected error ".ansiNote ++ expected.ansiSuccess), "but no error was raised".ansiFail)
 }
 
+/**
+ * `private` because it is `runSubject`'s way of reading the group it was handed, not an operation of its own:
+ * `foldPair`'s result is a plain type parameter, so the name has to come out of the pair before anything
+ * printing it can run.
+ */
+private def subjectOf(group: Pair[String, List[TestCase]]): String = group.foldPair(subjectName -> _ -> subjectName)
+
+/**
+ * `private` because it is `subjectOf`'s counterpart: the cases of the group, for the same reason.
+ */
+private def casesOf(group: Pair[String, List[TestCase]]): List[TestCase] = group.foldPair(_ -> cases -> cases)
+
 private def ansiFail(str: String): String = str.ansi("1;31")
+
+/**
+ * `private` because it is the summary's failing band, not a colour of its own: the fail red inverted into a
+ * background, so a failed run is a solid block rather than one more red line among the details above it.
+ */
+private def ansiAlarm(str: String): String = str.ansi("1;37;41")
 
 private def ansiSuccess(str: String): String = str.ansi("1;32")
 

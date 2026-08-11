@@ -55,18 +55,28 @@ three tiny modules plus a self-test:
   `error`; runs `runId(runThrow(body))` → `Either` and folds it), and the infix `body message newMessage`
   (`infix left below shouldBe` — rewrites a failing body's message).
 - `eliot.test.Runner` — `def main: {Console} Unit`, the executable entry point.
-  `namedValues[Test]("testCases").foreach(runSuite)` gathers every suite (see reflection below); `runSuite`
+  `namedValues[Test]("testCases").flatMap(runSuite)` gathers every suite (see reflection below); `runSuite`
   discharges the Writer to its accumulated list (`suite.runWriterToLog.runId`) and **groups it by `subject`**
   (`List.groupBy`, so subjects appear in order of first mention). **One line is printed per subject, not per
   case**: green `✔ subject · N passed` while everything passed, red `✗ subject · N passed, M failed` as soon as
   anything did not, with each failure's `should` phrase and detail lines indented underneath.
+
+  The run closes with **one `summary` line for everything that ran**: green
+  ` ✔ all clear · N passed ` while every case passed, and an **inverted red band** ` ✗ M failed · N passed `
+  (`ansiAlarm` — white on red) as soon as any did not, so the verdict is legible even after the per-subject
+  report has scrolled. This is why the run functions **answer their cases' failure lines instead of `Unit`**:
+  `runSuite`/`runSubject` return `List[List[String]]`, `main` flattens them, and `passedCount` (the shared
+  "no lines = passed" count) serves the subject headers and the summary alike — one traversal, one convention,
+  no second pass over the cases.
 
   The reporting is a pure-then-print split, and deliberately so: `runTestCase` discharges the body's `Throw` on
   `Id` (`testCase.body.runThrow.runId` → `Either[AssertionError, Unit]`) and answers that case's **failure
   lines** — empty exactly when it passed — so `report` derives both the counts and the detail body from the one
   list, and `runSubject` is the only thing that prints. That split is also what makes it *compile*: `foldPair`'s
   result parameter declares no effect row, so a `{Console}` computation may not be routed through it (rule 4 —
-  a plain type parameter is a payload). Keep the fold's body pure and `.foreach(printLine)` the lines it yields.
+  a plain type parameter is a payload). Keep the fold's body pure and `.foreach(printLine)` the lines it yields
+  — which is why `runSubject` reads its group through the pure `subjectOf`/`casesOf` projections (the stdlib's
+  `keyOf` trick) rather than printing inside a `foldPair`.
   `describe` is the one place turning an `AssertionError` shape into presentation lines, and the `ansi*` helpers
   the one place holding an escape sequence. `header` picks its line with `fold`, **not** `if..else`: `else` and
   `++` have no declared relative precedence, so an `if..else` whose arms concatenate strings does not compile.
@@ -81,7 +91,7 @@ by being on the path; nothing references it. (One `testCases` per module — the
 value per module under that name, the way `PluginRegistry` gathers `contribution`.)
 
 The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, which prints one `✔`/`✗` line
-per test subject with its pass and failure counts.
+per test subject with its pass and failure counts, then a closing summary line for the whole run.
 
 > **Requires a recent compiler.** Needs pinned effect-row `data` fields (`data TestCase(body:
 > {Throw[AssertionError] | Id} Unit)`; older checkouts reject it with "Cannot resolve type / Cannot
