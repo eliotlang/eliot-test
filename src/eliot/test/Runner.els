@@ -33,10 +33,10 @@ private def runSubject(group: Pair[String, List[TestCase]]): {Console} Unit =
  * One subject's report lines, built from its cases' failure lines: a case passed exactly when its lines are
  * empty, so the header's counts and the detail body underneath both come from the same list.
  */
-private def report(subjectName: String, failures: List[List[String]]): List[String] = {
-   val failedCount = failures.filter(lines -> fold(lines.isEmpty, false, true)).size
+private def report(subjectName: String, failureLines: List[List[String]]): List[String] = {
+   val passedCount = failureLines.filter(isEmpty).size
 
-   prepend(failures.flatten, header(subjectName, failures.size - failedCount, failedCount))
+   prepend(failureLines.flatten, header(subjectName, passedCount, failureLines.size - passedCount))
 }
 
 /**
@@ -67,16 +67,22 @@ private def runTestCase(testCase: TestCase): List[String] =
  * constructor reads in the report.
  */
 private def describe(error: AssertionError): List[String] = error match {
-   case Failed(reason)             -> append(empty, reason.ansiFail)
-   case NotEqual(expected, actual) -> append(append(empty, "expected ".ansiNote ++ expected.ansiSuccess), "actual   ".ansiNote ++ actual.ansiFail)
-   case UnexpectedlyEqual(equal)   -> append(empty, "expected a value different from ".ansiNote ++ equal.ansiFail)
-   case NoErrorRaised(expected)    -> append(append(empty, "expected error ".ansiNote ++ expected.ansiSuccess), "but no error was raised".ansiFail)
+   case Failed(reason)             -> singleton(reason.ansiFail)
+   case NotEqual(expected, actual) -> append(singleton("expected ".ansiNote ++ expected.ansiSuccess), "actual   ".ansiNote ++ actual.ansiFail)
+   case UnexpectedlyEqual(equal)   -> singleton("expected a value different from ".ansiNote ++ equal.ansiFail)
+   case NoErrorRaised(expected)    -> append(singleton("expected error ".ansiNote ++ expected.ansiSuccess), "but no error was raised".ansiFail)
 }
 
-private def ansiFail(str: String): String = "\u001B[1;31m" ++ str ++ "\u001B[0m"
+private def ansiFail(str: String): String = str.ansi("1;31")
 
-private def ansiSuccess(str: String): String = "\u001B[1;32m" ++ str ++ "\u001B[0m"
+private def ansiSuccess(str: String): String = str.ansi("1;32")
 
-private def ansiHighlight(str: String): String = "\u001B[1;37m" ++ str ++ "\u001B[0m"
+private def ansiHighlight(str: String): String = str.ansi("1;37")
 
-private def ansiNote(str: String): String = "\u001B[2;37m" ++ str ++ "\u001B[0m"
+private def ansiNote(str: String): String = str.ansi("2;37")
+
+/**
+ * `private` because it is the shared shape of the four colour helpers above, not a presentation choice of
+ * its own: wrap `str` in the escape sequence selecting `code`, resetting afterwards.
+ */
+private def ansi(code: String, str: String): String = "\u001B[" ++ code ++ "m" ++ str ++ "\u001B[0m"

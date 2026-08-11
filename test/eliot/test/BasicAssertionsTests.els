@@ -1,5 +1,3 @@
-import eliot.lang.Id
-import eliot.collection.List
 import eliot.test.Assertion
 import eliot.test.Test
 

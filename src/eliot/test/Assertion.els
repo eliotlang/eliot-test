@@ -75,14 +75,14 @@ def expect[E ~ Eq & Show](error: E, body: {Throw[E] | Id} Unit): {Throw[Assertio
  * rendered values otherwise.
  */
 infix def shouldBe[A ~ Eq & Show](actual: A, expected: A): {Throw[AssertionError]} Unit =
-   if (actual == expected) unit else raise(NotEqual(show(expected), show(actual)))
+   if(actual == expected) unit else raise(NotEqual(show(expected), show(actual)))
 
 /**
  * Assert that `actual` differs from `unexpected` (by their `Eq` instance), raising `UnexpectedlyEqual` with
  * the rendered value both sides turned out to be otherwise.
  */
 infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A): {Throw[AssertionError]} Unit =
-   if (actual != unexpected) unit else raise(UnexpectedlyEqual(show(actual)))
+   if(actual != unexpected) unit else raise(UnexpectedlyEqual(show(actual)))
 
 /**
  * Rewrite the failure message: runs `body` and, when it raises any `AssertionError`, re-raises it as a

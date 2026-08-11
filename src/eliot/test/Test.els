@@ -1,7 +1,6 @@
 import eliot.lang.Id
 import eliot.collection.List
 import eliot.test.Assertion
-import eliot.carrier.Effect
 
 /**
  * A single test case to run: a `name` to report it under, and a `body` that runs the test and raises an
@@ -15,11 +14,15 @@ data TestCase(subject: String, shouldPhrase: String, body: {Throw[AssertionError
 
 type Test = {Writer[List[TestCase]] | Id} Unit
 
+/**
+ * Name a test case: the `subject` under test and the `should` phrase naming the expectation. The case is
+ * not complete until `in` gives it a body — until then it carries the trivially passing `success`.
+ */
 infix none def should(subject: String, shouldPhrase: String): TestCase =
-   TestCase(subject, shouldPhrase, pure(unit))
+   TestCase(subject, shouldPhrase, success)
 
 /**
  * Give a body to a test case definition and register the completed case into the enclosing suite.
  */
 infix none below should def in(testCase: TestCase, body: {Throw[AssertionError] | Id} Unit): {Writer[List[TestCase]] | Id} Unit =
-   tell(append(empty, TestCase(testCase.subject, testCase.shouldPhrase, body)))
+   tell(singleton(TestCase(testCase.subject, testCase.shouldPhrase, body)))

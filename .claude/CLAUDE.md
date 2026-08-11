@@ -18,8 +18,9 @@ meta-information.
 A file is a module: `src/eliot/test/Test.els` is module `eliot.test.Test`. The whole framework is
 three tiny modules plus a self-test:
 
-- `eliot.test.Test` — the DSL. A **test case** is `data TestCase(name: String, body: {Throw[AssertionError]
-  | Id} Unit)`: a name plus a body that raises an `AssertionError` if it fails. That body field is a
+- `eliot.test.Test` — the DSL. A **test case** is `data TestCase(subject: String, shouldPhrase: String, body:
+  {Throw[AssertionError] | Id} Unit)`: what it is about, what it should do, and a body that raises an
+  `AssertionError` if it fails. That body field is a
   **pinned effect row** — the concrete `ThrowCarrier[AssertionError, Id, Unit]` stack over the pure
   identity base `Id` (stored `data`-field rows must be pinned). Pinning to `Id` means a body may only
   **assert** (raise via `Throw`), never do I/O, since `Id` has no `Suspend` instance.
@@ -31,19 +32,28 @@ three tiny modules plus a self-test:
   monoid is `Combine[List]` = concatenation).
 
   Two infix combinators build a suite in direct style:
-  - `"what" should "acceptance"` → a `TestCaseDefinition` (`infix none def should`).
-  - `definition in { body }` → `tell(append(empty, TestCase(...)))` (`infix none below should def in`),
+  - `"what" should "acceptance"` → a body-less `TestCase` carrying the trivially-passing `success`
+    (`infix none def should`). There is no separate definition type: a `data` field accessor claims its name
+    module-wide, so a second record with `subject`/`shouldPhrase` fields would collide with `TestCase`'s, and
+    `Pair` is no alternative either — `foldPair`'s result is a plain type parameter, which cannot carry the
+    `Writer` row `in` needs to return.
+  - `definition in { body }` → `tell(singleton(TestCase(...)))` (`infix none below should def in`),
     registering one case into the enclosing suite's Writer log. A `{ … }` block of `in` statements
     *sequences*: each `tell` contributes a singleton `[TestCase]`, the blocks' logs join via
-    `Combine[List]`, so the suite collects **every** case in declaration order.
-- `eliot.test.Assertion` — `data AssertionError(errorMessage: String)` (with `Eq[AssertionError]` = equal
-  by message, so `expect` can check for a specific failure) plus the assertion API. **Assertions signal
-  failure by raising `AssertionError` through the `Throw` effect**; a passing assertion returns `unit`.
-  This is why a body carries `{Throw[AssertionError]}`. Provides `success` (never raises),
-  `fail(reason)`, the infix `actual shouldBe expected` (over any `Eq` — `if(actual == expected) unit else
-  fail(...)`), `expect(error, body)` (passes iff `body` raises exactly `error`; runs `body.runThrow.runId`
-  → `Either` and folds it), and the infix `body message newMessage` (`infix left below shouldBe` — rewrites
-  a failing body's message).
+    `Combine[List]`, so the suite collects **every** case in declaration order. `in` **spells its pinned row
+    out** rather than returning `Test`: the alias in return position is rejected with "performs the effect
+    'Writer' but does not declare it".
+- `eliot.test.Assertion` — `data AssertionError = Failed | NotEqual | UnexpectedlyEqual | NoErrorRaised`, a sum
+  of *failure shapes* carrying the already-rendered values (assertions `show` at the raise site, where the
+  instance is known; how a shape is presented is the runner's job). `Eq[AssertionError]` is structural — same
+  shape, same values — so `expect` can check for a specific failure without coupling tests to presentation;
+  `Show[AssertionError]` is a compact one-line debug rendering used when an error is itself a compared value.
+  **Assertions signal failure by raising `AssertionError` through the `Throw` effect**; a passing assertion
+  returns `unit`. This is why a body carries `{Throw[AssertionError]}`. Provides `success` (never raises),
+  `fail(reason)`, the infix `actual shouldBe expected` and `actual shouldNotBe unexpected` (over any `Eq &
+  Show`, raising `NotEqual` / `UnexpectedlyEqual`), `expect(error, body)` (passes iff `body` raises exactly
+  `error`; runs `runId(runThrow(body))` → `Either` and folds it), and the infix `body message newMessage`
+  (`infix left below shouldBe` — rewrites a failing body's message).
 - `eliot.test.Runner` — `def main: {Console} Unit`, the executable entry point.
   `namedValues[Test]("testCases").foreach(runSuite)` gathers every suite (see reflection below); `runSuite`
   discharges the Writer to its accumulated list (`suite.runWriterToLog.runId`) and **groups it by `subject`**
@@ -57,6 +67,9 @@ three tiny modules plus a self-test:
   list, and `runSubject` is the only thing that prints. That split is also what makes it *compile*: `foldPair`'s
   result parameter declares no effect row, so a `{Console}` computation may not be routed through it (rule 4 —
   a plain type parameter is a payload). Keep the fold's body pure and `.foreach(printLine)` the lines it yields.
+  `describe` is the one place turning an `AssertionError` shape into presentation lines, and the `ansi*` helpers
+  the one place holding an escape sequence. `header` picks its line with `fold`, **not** `if..else`: `else` and
+  `++` have no declared relative precedence, so an `if..else` whose arms concatenate strings does not compile.
 
 **The one architectural idea worth internalizing: tests register by name, via compile-time
 reflection — there is no central list, no annotations, no import wiring.** The runner calls
