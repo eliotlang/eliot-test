@@ -43,12 +43,12 @@ private def runSubject(group: Pair[String, List[TestCase]]): {Console} List[List
  * the failures as soon as any did not — the one line to read when the report scrolled past.
  */
 private def summary(failureLines: List[List[String]]): String =
-   fold(
-      failureLines.passedCount == failureLines.size,
-      (" ✔ all clear · " ++ show(failureLines.passedCount) ++ " passed ").ansiSuccess,
+   if (failureLines.passedCount == failureLines.size) {
+      (" ✔ all clear · " ++ show(failureLines.passedCount) ++ " passed ").ansiSuccess
+   } else {
       (" ✗ " ++ show(failureLines.size - failureLines.passedCount) ++ " failed · " ++
          show(failureLines.passedCount) ++ " passed ").ansiAlarm
-   )
+   }
 
 /**
  * One subject's report lines, built from its cases' failure lines: a case passed exactly when its lines are
