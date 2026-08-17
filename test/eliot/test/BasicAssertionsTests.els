@@ -2,37 +2,37 @@ import eliot.test.Assertion
 import eliot.test.Test
 
 def testCases: Test = {
-   "shouldBe" should "pass when given two equal strings" in {
+   "shouldBe" should "pass when given two equal strings" in pure {
       "hello" shouldBe "hello"
    }
-   "shouldBe" should "raise NotEqual carrying both rendered values" in {
+   "shouldBe" should "raise NotEqual carrying both rendered values" in pure {
       expect(NotEqual("hello", "hell"), "hell" shouldBe "hello")
    }
-   "shouldNotBe" should "pass when given two different strings" in {
+   "shouldNotBe" should "pass when given two different strings" in pure {
       "hello" shouldNotBe "hell"
    }
-   "shouldNotBe" should "raise UnexpectedlyEqual carrying the shared value" in {
+   "shouldNotBe" should "raise UnexpectedlyEqual carrying the shared value" in pure {
       expect(UnexpectedlyEqual("hello"), "hello" shouldNotBe "hello")
    }
-   "success" should "raise nothing" in {
+   "success" should "raise nothing" in pure {
       success
    }
-   "fail" should "raise Failed carrying the given reason" in {
+   "fail" should "raise Failed carrying the given reason" in pure {
       expect(Failed("boom"), fail("boom"))
    }
-   "expect" should "pass when the body raises the expected error" in {
+   "expect" should "pass when the body raises the expected error" in pure {
       expect("boom", raise("boom"))
    }
-   "expect" should "raise NotEqual when the body raises a different error" in {
+   "expect" should "raise NotEqual when the body raises a different error" in pure {
       expect(NotEqual("boom", "bang"), expect("boom", raise("bang")))
    }
-   "expect" should "raise NoErrorRaised when the body raises no error" in {
+   "expect" should "raise NoErrorRaised when the body raises no error" in pure {
       expect(NoErrorRaised(show(Failed("boom"))), expect(Failed("boom"), success))
    }
-   "message" should "rewrite any failure to Failed with the new message" in {
+   "message" should "rewrite any failure to Failed with the new message" in pure {
       expect(Failed("values differ"), "a" shouldBe "b" message "values differ")
    }
-   "message" should "leave a passing body passing" in {
+   "message" should "leave a passing body passing" in pure {
       "a" shouldBe "a" message "should not surface"
    }
 }

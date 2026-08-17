@@ -18,31 +18,40 @@ meta-information.
 A file is a module: `src/eliot/test/Test.els` is module `eliot.test.Test`. The whole framework is
 three tiny modules plus a self-test:
 
-- `eliot.test.Test` — the DSL. A **test case** is `data TestCase(subject: String, shouldPhrase: String, body:
-  {Throw[AssertionError] | Id} Unit)`: what it is about, what it should do, and a body that raises an
-  `AssertionError` if it fails. That body field is a
-  **pinned effect row** — the concrete `ThrowCarrier[AssertionError, Id, Unit]` stack over the pure
-  identity base `Id` (stored `data`-field rows must be pinned). Pinning to `Id` means a body may only
-  **assert** (raise via `Throw`), never do I/O, since `Id` has no `Suspend` instance.
+- `eliot.test.Test` — the DSL, and **plain data throughout**. A **test case** is `data TestCase(subject:
+  String, shouldPhrase: String)`: what it is about and what it should do, with *no body*. What running a
+  body answered is `type Outcome = Either[AssertionError, Unit]`, and the two together are `data
+  TestResult(testCase: TestCase, outcome: Outcome)`. **Nothing here stores a computation, so nothing here
+  pins a carrier** — the framework holds verdicts, not suspended work.
 
-  A **suite** is `type Test = {Writer[List[TestCase]] | Id} Unit` — a `Writer` computation that
-  *accumulates* a `List[TestCase]` log (over `Id`). This is the type reflection gathers. It is a
+  A **suite** is `type Test = {Writer[List[TestResult]] | Id} Unit` — a `Writer` computation that
+  *accumulates* a `List[TestResult]` log (over `Id`). This is the type reflection gathers. It is a
   `Writer`, not `State`, because a suite only ever *appends* cases and never reads back what has been
   registered — the honest, minimal contract for a collector (`Writer` = append-only `State`; the log's
-  monoid is `Combine[List]` = concatenation).
+  monoid is `Combine[List]` = concatenation). It is pinned to `Id` for two reasons at once: a gathered type
+  must be concrete, and `Id` has no `Suspend`, so a suite can perform nothing beyond its own registration.
 
-  Two infix combinators build a suite in direct style:
-  - `"what" should "acceptance"` → a body-less `TestCase` carrying the trivially-passing `success`
-    (`infix none def should`). There is no separate definition type: a `data` field accessor claims its name
-    module-wide, so a second record with `subject`/`shouldPhrase` fields would collide with `TestCase`'s, and
-    `Pair` is no alternative either — `foldPair`'s result is a plain type parameter, which cannot carry the
-    `Writer` row `in` needs to return.
-  - `definition in { body }` → `tell(singleton(TestCase(...)))` (`infix none below should def in`),
+  Two infix combinators and a **discharge word** build a suite in direct style:
+  - `"what" should "acceptance"` → a `TestCase` (`infix none def should`). Naming a case is now its own
+    record, so `TestResult` nests it rather than repeating its fields — the accessor collision that once
+    ruled a separate definition type out no longer arises.
+  - `definition in outcome` → `tell(singleton(TestResult(...)))` (`infix none below should def in`),
     registering one case into the enclosing suite's Writer log. A `{ … }` block of `in` statements
-    *sequences*: each `tell` contributes a singleton `[TestCase]`, the blocks' logs join via
-    `Combine[List]`, so the suite collects **every** case in declaration order. `in` **spells its pinned row
-    out** rather than returning `Test`: the alias in return position is rejected with "performs the effect
-    'Writer' but does not declare it".
+    *sequences*: each `tell` contributes a singleton `[TestResult]`, the blocks' logs join via
+    `Combine[List]`, so the suite collects **every** case in declaration order. **`in` takes plain data**,
+    so it names no effect and no carrier.
+  - `in pure { … }` — the word between `in` and the block is what runs the body. No new syntax was needed:
+    juxtaposition binds tighter than any infix operator, so this parses as `in(testCase, pure({ … }))`.
+    Because the outcome is an *argument*, **the body has already run by the time the case is registered** —
+    tests run where they are written and only verdicts are collected. A word taking arguments works the same
+    way by currying: `in myCarrier(input) { … }`.
+
+  `in` **spells its pinned row out** rather than returning `Test`. A closed-row alias is not yet carried in
+  both positions that matter: before compiler `eb163b1` the alias was rejected in a definition's return
+  position, and as of `eb163b1` it is instead rejected where a reflected value declares it (`namedValues[Test]`
+  over `def testCases: Test` ⤳ "This argument is a computation, but argument 2 of 'append' declares no effect
+  row"). The spelled-out row compiles either way; once the compiler carries a closed-row alias in both, this
+  can simply become `Test`.
 - `eliot.test.Assertion` — `data AssertionError = Failed | NotEqual | UnexpectedlyEqual | NoErrorRaised`, a sum
   of *failure shapes* carrying the already-rendered values (assertions `show` at the raise site, where the
   instance is known; how a shape is presented is the runner's job). `Eq[AssertionError]` is structural — same
@@ -52,8 +61,16 @@ three tiny modules plus a self-test:
   returns `unit`. This is why a body carries `{Throw[AssertionError]}`. Provides `success` (never raises),
   `fail(reason)`, the infix `actual shouldBe expected` and `actual shouldNotBe unexpected` (over any `Eq &
   Show`, raising `NotEqual` / `UnexpectedlyEqual`), `expect(error, body)` (passes iff `body` raises exactly
-  `error`; runs `runId(runThrow(body))` → `Either` and folds it), and the infix `body message newMessage`
+  `error`; runs `pure(body)` → `Either` and folds it), and the infix `body message newMessage`
   (`infix left below shouldBe` — rewrites a failing body's message).
+
+  It also holds **`pure`** — `def pure[E, A](body: {Throw[E] | Id} A): Either[E, A] = runId(runThrow(body))`
+  — the framework's discharge word and **the one place in it that names a carrier**. The pin to `Id` is the
+  word's meaning, not an implementation detail: `Id` has no `Suspend`, so a body handed to `pure` may assert
+  and nothing else, and a `printLine` in a unit test is a compile error ("The effect 'Console' cannot run
+  here, because the computation it runs in is pure…"). Running the body down to a verdict is the consequence
+  of that constraint. `expect` and `message` go through `pure` for the same reason, which is why `runThrow`
+  appears exactly once in the framework.
 - `eliot.test.Runner` — `def main: {Console} Unit`, the executable entry point.
   `namedValues[Test]("testCases").flatMap(runSuite)` gathers every suite (see reflection below); `runSuite`
   discharges the Writer to its accumulated list (`suite.runWriterToLog.runId`) and **groups it by `subject`**
@@ -69,14 +86,15 @@ three tiny modules plus a self-test:
   "no lines = passed" count) serves the subject headers and the summary alike — one traversal, one convention,
   no second pass over the cases.
 
-  The reporting is a pure-then-print split, and deliberately so: `runTestCase` discharges the body's `Throw` on
-  `Id` (`testCase.body.runThrow.runId` → `Either[AssertionError, Unit]`) and answers that case's **failure
-  lines** — empty exactly when it passed — so `report` derives both the counts and the detail body from the one
-  list, and `runSubject` is the only thing that prints. That split is also what makes it *compile*: `foldPair`'s
+  The reporting is a pure-then-print split, and deliberately so: **the runner discharges nothing** — the body
+  ran at its `in`, so `failureLines` merely folds `result.outcome` into that case's **failure lines**, empty
+  exactly when it passed. `report` derives both the counts and the detail body from the one list, and
+  `runSubject` is the only thing that prints. That split is also what makes it *compile*: `foldPair`'s
   result parameter declares no effect row, so a `{Console}` computation may not be routed through it (rule 4 —
   a plain type parameter is a payload). Keep the fold's body pure and `.foreach(printLine)` the lines it yields
-  — which is why `runSubject` reads its group through the pure `subjectOf`/`casesOf` projections (the stdlib's
-  `keyOf` trick) rather than printing inside a `foldPair`.
+  — which is why `runSubject` reads its group through the pure `groupSubject`/`groupResults` projections (the
+  stdlib's `keyOf` trick) rather than printing inside a `foldPair`. `subjectOf` is the separate grouping key,
+  reaching through `result.testCase.subject`.
   `describe` is the one place turning an `AssertionError` shape into presentation lines, and the `ansi*` helpers
   the one place holding an escape sequence. `header` picks its line with `fold`, **not** `if..else`: `else` and
   `++` have no declared relative precedence, so an `if..else` whose arms concatenate strings does not compile.
@@ -85,18 +103,45 @@ three tiny modules plus a self-test:
 reflection — there is no central list, no annotations, no import wiring.** The runner calls
 `namedValues[Test]("testCases")` (from `eliot.compiler.Reflect`), which reifies *every* top-level
 value literally named `testCases`, of type `Test`, across all modules on the compiler path. To add
-tests, declare `def testCases: Test = { "…" should "…" in { … } … }` in any module inside a compiled
+tests, declare `def testCases: Test = { "…" should "…" in pure { … } … }` in any module inside a compiled
 source root — `test/eliot/test/BasicAssertionsTests.els` is the worked example. It is picked up simply
 by being on the path; nothing references it. (One `testCases` per module — the reflection gathers one
 value per module under that name, the way `PluginRegistry` gathers `contribution`.)
 
+## Testing effectful code
+
+A `pure` body cannot perform I/O, which is the point — but production code that declares `{Console}` (or any
+effect) is still testable, because **the carrier is the injection point** (the compiler's own
+`docs/testing-effects.md`, and `examples/src/EffectsTestFramework.els`). The test declares its own pure
+carrier and its own instance of the ability for it; production code is untouched and names no carrier.
+
+The shape is **run-then-assert**, and the ordering is forced: the fake run must sit in a definition with *no
+ambient carrier of its own*, because a region writes every carrier-generic callee at its own carrier. So the
+run cannot go inside the `pure { … }` body — it goes in a plain `def` beside it, and the body asserts on the
+value that answers:
+
+```eliot
+def greetTranscript: String = transcriptOf(greet("Bob"))   // fake run: its own definition
+
+"greet" should "greet the name it was given" in pure {
+   greetTranscript shouldBe "Hello, Bob!;"                 // assertion: the framework's body
+}
+```
+
+Asserting *part-way through* a faked run is not possible: pinning the assertion effect over the fake carrier
+(`{Throw[AssertionError] | Session} Unit`) fails because a fake's abilities have no canonical carrier to be
+row entries, and because the ability would need an instance for the whole stack rather than the base. That is
+L3 in `docs/testing-effects.md`, whose proposed `{| Session}` capture tag would lift it; it is a convenience,
+not a prerequisite.
+
 The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, which prints one `✔`/`✗` line
 per test subject with its pass and failure counts, then a closing summary line for the whole run.
 
-> **Requires a recent compiler.** Needs pinned effect-row `data` fields (`data TestCase(body:
-> {Throw[AssertionError] | Id} Unit)`; older checkouts reject it with "Cannot resolve type / Cannot
-> quote neutral value") and the ambient **`Writer` effect** + **`Combine[List]` monoid** (shipped in the
-> compiler 2026-07-21 — `Writer` is `State` restricted to append-only, `Combine` gained `empty`).
+> **Compiler version.** Verified against compiler `f7a546b`. Needs the ambient **`Writer` effect** +
+> **`Combine[List]` monoid** (shipped 2026-07-21 — `Writer` is `State` restricted to append-only, `Combine`
+> gained `empty`). It no longer needs pinned effect-row `data` fields at all — no `data` here stores a row.
+> **Does not build on `eb163b1`**, which regressed closed-row aliases at reflected values (see `in` above);
+> that is a compiler bug, not a change this project should absorb.
 
 ## Building and running (compiler CLI)
 

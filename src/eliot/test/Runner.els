@@ -23,17 +23,17 @@ def main: {Console} Unit = {
  */
 private def runSuite(suite: Test): {Console} List[List[String]] =
    runId(runWriterToLog(suite))
-     .groupBy(subject)
+     .groupBy(subjectOf)
      .flatMap(runSubject)
 
 /**
- * Runs every case of one subject and reports them as a single line: the subject, how many of its cases passed
- * and — only when there were any — how many failed, with each failure's detail lines following underneath.
+ * Reports every case of one subject as a single line: the subject, how many of its cases passed and — only when there
+ * were any — how many failed, with each failure's detail lines following underneath.
  */
-private def runSubject(group: Pair[String, List[TestCase]]): {Console} List[List[String]] = {
-   val caseFailures = group.casesOf.map(runTestCase)
+private def runSubject(group: Pair[String, List[TestResult]]): {Console} List[List[String]] = {
+   val caseFailures = group.groupResults.map(failureLines)
 
-   report(group.subjectOf, caseFailures).foreach(printLine)
+   report(group.groupSubject, caseFailures).foreach(printLine)
 
    caseFailures
 }
@@ -78,15 +78,20 @@ private def header(subjectName: String, passedCount: Int, failedCount: Int): Str
    )
 
 /**
- * Runs a single test case: discharges its `Throw` on the pure `Id` carrier to an `Either`, and answers the lines
- * reporting its failure — its `should` phrase and the failure's detail lines — or no lines at all when it passed.
+ * The lines reporting one case's failure — its `should` phrase and the failure's detail lines — or no lines at all
+ * when it passed. Pure: the body ran where it was written, so all that is left here is to read its outcome.
  */
-private def runTestCase(testCase: TestCase): List[String] =
-   runId(runThrow(testCase.body))
+private def failureLines(result: TestResult): List[String] =
+   result.outcome
       .foldEither(
-         e -> prepend(e.describe.map(line -> " |   ".ansiFail ++ line), " | ✗ ".ansiFail ++ testCase.shouldPhrase.ansiHighlight),
+         e -> prepend(e.describe.map(line -> " |   ".ansiFail ++ line), " | ✗ ".ansiFail ++ result.testCase.shouldPhrase.ansiHighlight),
          _ -> empty
       )
+
+/**
+ * `private` because it is `runSuite`'s grouping key, not an operation of its own: what a result's case is about.
+ */
+private def subjectOf(result: TestResult): String = result.testCase.subject
 
 /**
  * Renders a failure shape into presentation lines — the one place deciding how each `AssertionError`
@@ -104,12 +109,12 @@ private def describe(error: AssertionError): List[String] = error match {
  * `foldPair`'s result is a plain type parameter, so the name has to come out of the pair before anything
  * printing it can run.
  */
-private def subjectOf(group: Pair[String, List[TestCase]]): String = group.foldPair(subjectName -> _ -> subjectName)
+private def groupSubject(group: Pair[String, List[TestResult]]): String = group.foldPair(subjectName -> _ -> subjectName)
 
 /**
- * `private` because it is `subjectOf`'s counterpart: the cases of the group, for the same reason.
+ * `private` because it is `groupSubject`'s counterpart: the results of the group, for the same reason.
  */
-private def casesOf(group: Pair[String, List[TestCase]]): List[TestCase] = group.foldPair(_ -> cases -> cases)
+private def groupResults(group: Pair[String, List[TestResult]]): List[TestResult] = group.foldPair(_ -> results -> results)
 
 private def ansiFail(str: String): String = str.ansi("1;31")
 
