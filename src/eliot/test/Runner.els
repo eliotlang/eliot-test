@@ -1,4 +1,4 @@
-import eliot.lang.Id
+import eliot.carrier.Effect
 import eliot.compiler.Reflect
 import eliot.test.Test
 import eliot.test.Assertion
@@ -10,21 +10,37 @@ import eliot.collection.List
  * summarizing the whole run. Point the compiler at the source roots and run this module's `main` to execute
  * the whole suite.
  */
-def main: {Console} Unit = {
-   val caseFailures = namedValues[Test]("testCases").flatMap(runSuite)
-
-   printLine(summary(caseFailures))
-}
+def main: {Console} Unit = printLine(summary(allCaseFailures))
 
 /**
- * Runs one module's suite: its collected test cases gathered by subject, subjects in order of first mention.
- * Answers every case's failure lines, so the closing summary counts the whole run the same way a subject
- * counts its own cases.
+ * Every case of every suite in the program, as its failure lines. `foldNamedValues` hands each gathered suite to
+ * `runSuite`'s declared slot rather than storing it, so a suite is a *computation* the runner performs in place — which
+ * is what lets a suite perform effects, on whatever carrier this runner was compiled to.
  */
-private def runSuite(suite: Test): {Console} List[List[String]] =
-   runId(runWriterToLog(suite))
-     .groupBy(subjectOf)
-     .flatMap(runSubject)
+private def allCaseFailures: {Console} List[List[String]] = foldNamedValues("testCases", noFailures, runSuite)
+
+/**
+ * The fold's seed: no failures, as a computation on the runner's own carrier, since that is what `runSuite`'s `rest`
+ * slot declares.
+ */
+private def noFailures: {Console} List[List[String]] = empty
+
+/**
+ * Runs one module's suite and prepends its cases' failure lines to those of the suites after it.
+ *
+ * The suite arrives as a computation in a slot this definition *declares*, pinned only at its `Writer` so every other
+ * effect it performs rides `G` — the carrier the runner itself runs on. `rest` is the suites after this one, still
+ * unrun, so suites run in gathered order and each one's own output precedes its own report.
+ */
+private def runSuite[G[_] ~ Console & Effect](
+      suiteName: String,
+      suite: {Writer[List[TestResult]] | G} Unit,
+      rest: G[List[List[String]]]): G[List[List[String]]] = {
+   val caseFailures = runWriterToLog(suite).groupBy(subjectOf).flatMap(runSubject)
+   val restFailures = rest
+
+   caseFailures ++ restFailures
+}
 
 /**
  * Reports every case of one subject as a single line: the subject, how many of its cases passed and — only when there

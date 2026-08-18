@@ -53,19 +53,21 @@ implement Show[AssertionError] {
 }
 
 /**
- * Run a test body on the pure identity carrier, answering what it raised — the framework's own discharge word, and the
- * one place in it that names a carrier.
+ * Force a test body to be **pure**: `"…" should "…" in pure { … }` admits assertions and nothing else, whatever the
+ * enclosing suite's row allows.
  *
- * `Id` has no `Suspend` instance, so a body handed to `pure` may assert and do nothing else: a `printLine` in a unit
- * test is a compile error, not a test that quietly performs I/O. That constraint is the word's whole meaning; running
- * the body down to a plain verdict is the consequence.
- *
- * A test author writes their own word the same way, with their own carrier in the body's row, and `in` consumes either
- * without knowing the difference. Note that a fake carrier's *run* must sit in a definition of its own rather than
- * inside a pinned body — a region writes every carrier-generic callee at its own carrier — so testing effectful code
- * is run-then-assert: run the production code under the fake in a plain `def`, assert on the value it answers here.
+ * The pin to `Id` is the word's meaning, not an implementation detail: `Id` has no `Suspend`, so a body handed to
+ * `pure` can perform no effect at all, and a `printLine` inside one is a compile error ("The effect 'Console' cannot
+ * run here, because the computation it runs in is pure…"). The verdict is then reflected back into the assertion
+ * effect, so `pure` stands exactly where an effectful body stands and `in` cannot tell the two apart.
  */
-def pure[E, A](body: {Throw[E] | Id} A): Either[E, A] = runId(runThrow(body))
+def pure(body: {Throw[AssertionError] | Id} Unit): {Throw[AssertionError]} Unit = orRaise(outcomeOf(body))
+
+/**
+ * Run a pure body down to its verdict as plain data — what `pure`, `expect` and `message` are each built from, and the
+ * one place in the framework that names a carrier.
+ */
+def outcomeOf[E, A](body: {Throw[E] | Id} A): Either[E, A] = runId(runThrow(body))
 
 /**
  * A trivially passing test body: it makes no assertion, so it never raises.
@@ -82,7 +84,7 @@ def fail(reason: String): {Throw[AssertionError]} Unit = raise(Failed(reason))
  * `NotEqual` when the body raises a different error and `NoErrorRaised` when it completes without raising.
  */
 def expect[E ~ Eq & Show](error: E, body: {Throw[E] | Id} Unit): {Throw[AssertionError]} Unit =
-   pure(body)
+   outcomeOf(body)
       .foldEither(raised -> raised shouldBe error, _ -> raise(NoErrorRaised(show(error))))
 
 /**
@@ -104,5 +106,5 @@ infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A): {Thr
  * `Failed` carrying `newMessage`. A passing body is left untouched.
  */
 infix left below shouldBe def message(body: {Throw[AssertionError] | Id} Unit, newMessage: String): {Throw[AssertionError]} Unit =
-   pure(body)
+   outcomeOf(body)
       .foldEither(_ -> fail(newMessage), _ -> success)

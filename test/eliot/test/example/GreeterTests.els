@@ -1,4 +1,3 @@
-import eliot.lang.Id
 import eliot.collection.List
 import eliot.test.Assertion
 import eliot.test.Test
@@ -6,15 +5,15 @@ import eliot.test.example.Greeter
 import eliot.test.example.FakeConsole
 
 /**
- * **One suite, three kinds of test.** Pure unit tests that may perform nothing at all, run-then-assert tests over
- * effectful code, and direct-style tests that interleave effects with assertions — registered side by side in one
- * `testCases`, reported by the one runner, counted in the one summary.
+ * **One suite, four kinds of test.** Pure unit tests that may perform nothing at all, run-then-assert tests over
+ * effectful code, tests performing real effects inline, and direct-style tests interleaving *faked* effects with
+ * assertions — registered side by side in one `testCases`, reported by the one runner, counted in the one summary.
  *
- * They mix because `in` takes plain data: the word between `in` and its argument is what ran the body and what
- * decided which effects the body was allowed to perform, and by the time a case is registered all that is left is the
- * verdict. `pure` is the framework's word; `onConsole` is this package's own, and `in` cannot tell them apart.
+ * They mix because `in` discharges only the assertion effect: what a body may do is decided by this suite's declared
+ * row (which admits `{Console}`), by `pure` where a case opts out of effects entirely, and by the carrier an author's
+ * own word names where a case wants a fake. No carrier is named here, and none is pinned.
  */
-def testCases: {Writer[List[TestResult]] | Id} Unit = {
+def testCases: {Writer[List[TestResult]], Console} Unit = {
    // --- 1. a pure unit test: the body may assert and nothing else --------------------------------------------------
    // `Id` has no `Suspend`, so a `printLine` in here is a compile error rather than a test that quietly does I/O.
    "greeting" should "address the name it was given" in pure {
@@ -33,9 +32,17 @@ def testCases: {Writer[List[TestResult]] | Id} Unit = {
       silentGreetTranscript shouldBe "Hello, stranger!\n"
    }
 
-   // --- 3. direct-style over effectful code -----------------------------------------------------------------------
+   // --- 3. real effects, written inline ----------------------------------------------------------------------------
+   // The suite's row declares `{Console}`, so a body may perform it — on whatever carrier the runner was compiled to.
+   // Nothing here names a carrier, and the body needs no definition of its own.
+   "real effects" should "be available to a body whose suite declares them" in {
+      printLine(" | (this line was printed by a test performing a real Console effect)")
+      success
+   }
+
+   // --- 4. direct-style over a faked carrier -----------------------------------------------------------------------
    // The body performs the faked console and asserts *between* its steps. Same suite, same runner, same summary.
-   "farewell" should "say goodbye, then invite a return" in farewellOutcome
+   "farewell" should "say goodbye, then invite a return" in orRaise(farewellOutcome)
 }
 
 /**

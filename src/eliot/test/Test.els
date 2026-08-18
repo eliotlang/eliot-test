@@ -1,11 +1,11 @@
-import eliot.lang.Id
+import eliot.carrier.Effect
 import eliot.collection.List
 import eliot.test.Assertion
 
 /**
  * What a test case is *about*: the `subject` under test and the `should` phrase naming the expectation. It carries no
- * body — a case's body is run where it is written, by the discharge word standing between `in` and the block, so what
- * the framework ever holds is the case's name and what running it answered.
+ * body — a case's body is run by `in`, on the suite's own carrier, so what the framework ever holds is the case's name
+ * and what running it answered.
  */
 data TestCase(subject: String, shouldPhrase: String)
 
@@ -17,39 +17,30 @@ data TestResult(testCase: TestCase, outcome: Outcome)
 
 /**
  * What running one test body answered: the `AssertionError` it raised, or `unit` when it raised nothing.
- *
- * This is the type every discharge word answers — `pure` for a body that may only assert, an author's own word for a
- * body running on a carrier of their own. Which effects a body was allowed to perform is decided by the word's
- * parameter type; by the time `in` sees the case, all that is left is the verdict.
  */
 type Outcome = Either[AssertionError, Unit]
 
 /**
- * A suite: a `Writer` computation accumulating a `List[TestResult]` log, and the type compile-time reflection gathers.
- *
- * It is a `Writer` because a suite only ever *appends* cases and never reads back what has been registered — the honest
- * contract for a collector (`Writer` = append-only `State`; the log's monoid is `Combine[List]` = concatenation). It is
- * pinned to `Id` because a stored, gathered type must be concrete — and because that pin is the suite's own guarantee:
- * `Id` has no `Suspend`, so a suite can perform nothing but its own registration.
- */
-type Test = {Writer[List[TestResult]] | Id} Unit
-
-/**
  * Name a test case: the `subject` under test and the `should` phrase naming the expectation. The case is not complete
- * until `in` gives it an outcome.
+ * until `in` gives it a body.
  */
 infix none def should(subject: String, shouldPhrase: String): TestCase =
    TestCase(subject, shouldPhrase)
 
 /**
- * Register a named case's outcome into the enclosing suite.
+ * Run a named case's body and register its verdict into the enclosing suite.
  *
- * `in` takes an `Outcome` — plain data — so it names no effect and no carrier. The word between `in` and the block is
- * what runs the body and constrains what the body was allowed to do: `"…" should "…" in pure { … }` for a unit test.
- * Because the outcome is an argument, the body has already run by the time the case is registered.
+ * `in` discharges the **assertion** effect and is transparent to every other effect the body performs: the body's row
+ * is pinned only at `Throw[AssertionError]`, over the suite's own carrier `G`, so what a test may do is decided by the
+ * suite's declared row and by nothing here. A suite declaring `{Writer[List[TestResult]]}` alone admits only bodies
+ * that assert; one that also declares `{Console}` admits bodies that print, on whatever carrier the runner is compiled
+ * to. Wrap a body in `pure` to forbid all effects regardless of what the suite allows.
  *
- * The return type is the `Test` alias itself: since compiler `eb163b1` a closed-row alias is carried in a definition's
- * return position, so registering a case says what it produces — a suite — rather than restating that suite's row.
+ * Because the body is a *slot* rather than stored data, it is written where it stands — no test is collected unrun.
  */
-infix none below should def in(testCase: TestCase, outcome: Outcome): Test =
+infix none below should
+def in[G[_] ~ Writer[List[TestResult]] & Effect](testCase: TestCase, body: {Throw[AssertionError] | G} Unit): G[Unit] = {
+   val outcome = runThrow(body)
+
    tell(singleton(TestResult(testCase, outcome)))
+}
