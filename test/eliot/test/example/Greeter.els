@@ -1,0 +1,24 @@
+/**
+ * The **application under test** for the worked examples in this package. It is ordinary production code: some of it
+ * is pure, some of it declares `{Console}`, and none of it knows a test exists — no injected handler, no extra
+ * parameter, no test hook, and above all no carrier. Declaring an effect row is the whole of its testability, because
+ * a row leaves the carrier to whoever runs the code, and in a test that is the test.
+ */
+
+/**
+ * Pure application logic: no row, so it is tested with the framework's own `pure` word and nothing else.
+ */
+def greeting(name: String): String = "Hello, " ++ name ++ "!"
+
+/**
+ * Effectful application logic: reads a name and greets it. `{Console}` names an effect, not an implementation.
+ */
+def greet: {Console} Unit = printLine(greeting(readLine orElse "stranger"))
+
+/**
+ * Two lines of output, so a test can show that ordering — and a mid-run assertion between the two — is observable.
+ */
+def farewell(name: String): {Console} Unit = {
+   printLine("Goodbye, " ++ name ++ ".")
+   printLine("Come back soon!")
+}

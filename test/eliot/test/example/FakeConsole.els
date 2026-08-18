@@ -1,0 +1,91 @@
+import eliot.carrier.Effect
+import eliot.collection.List
+import eliot.test.Assertion
+import eliot.test.Test
+
+/**
+ * A **pure carrier standing in for the console**, and the two discharge words that run a test body on it — the worked
+ * example of what "the carrier is the injection point" costs a test author: one `data`, one `Effect` instance, one
+ * instance per faked ability, and one word answering `Outcome`.
+ *
+ * `Recorded` threads a `Session` — the input still to be read, and everything written so far — and short-circuits on a
+ * raised `AssertionError`. It has **no `Suspend` instance**, and `Suspend` is the only route to a native side effect,
+ * so a body running here is structurally incapable of touching the real console. That is also what picks the fake:
+ * the jvm layer's real `Console` is `implement[F[_] ~ Suspend] Console[F]`, whose constraint `Recorded` fails, so it
+ * declines and the instance below is the unique survivor. Nothing is registered, injected or configured.
+ */
+
+/**
+ * What the fake console holds: the lines `readLine` has yet to hand out, and everything `printLine` has written.
+ */
+data Session(pending: List[String], written: String)
+
+/**
+ * The carrier: a `Session`-threading function answering the outcome so far, so a raised `AssertionError` stops the
+ * rest of the body the way a real failure stops a real test.
+ */
+data Recorded[A](runRecorded: Session => Pair[Either[AssertionError, A], Session])
+
+implement Effect[Recorded] {
+   def pure[A](a: A): Recorded[A] = Recorded(s -> Pair(Right(a), s))
+
+   def flatMap[A, B](f: A => Recorded[B], fa: Recorded[A]): Recorded[B] =
+      Recorded(s -> foldPair(
+         outcome -> s2 -> outcome.foldEither(e -> Pair(Left(e), s2), a -> runRecorded(f(a))(s2)),
+         runRecorded(fa)(s)))
+
+   def map[A, B](f: A => B, fa: Recorded[A]): Recorded[B] =
+      Recorded(s -> foldPair(
+         outcome -> s2 -> Pair(outcome.foldEither(e -> Left(e), a -> Right(f(a))), s2),
+         runRecorded(fa)(s)))
+}
+
+/**
+ * The fake interpretation of the standard `Console` effect. Legally colocated with `Recorded` — an instance may live
+ * with its ability *or* with one of its type arguments — and confined to this program, since compilation is
+ * whole-program monomorphization from `main`.
+ */
+implement Console[Recorded] {
+   def printLine(line: String): Recorded[Unit] =
+      Recorded(s -> Pair(Right(unit), Session(s.pending, s.written ++ line ++ "\n")))
+
+   def readLine: Recorded[Option[String]] =
+      Recorded(s -> Pair(Right(s.pending.head), Session(s.pending.tail, s.written)))
+}
+
+/**
+ * Assertions on this carrier. This one instance is what lets a test body **interleave** effects and assertions:
+ * `Throw[AssertionError]` rides `Recorded` itself rather than a `ThrowCarrier` stacked over it, so no cross-lift is
+ * needed and no row has to be pinned. Raising records the error and every later step is skipped by `flatMap`.
+ */
+implement Throw[AssertionError, Recorded] {
+   def raise[A](err: AssertionError): Recorded[A] = Recorded(s -> Pair(Left(err), s))
+}
+
+/**
+ * Reading back what the body has written so far — an ability of the fake, with no counterpart in production. This is
+ * what a mid-run assertion asserts *on*.
+ */
+ability Transcript[F[_]] {
+   def transcript: {Transcript} String
+}
+
+implement Transcript[Recorded] {
+   def transcript: Recorded[String] = Recorded(s -> Pair(Right(s.written), s))
+}
+
+/**
+ * The **discharge word** for a body that may use the console and assert as it goes: `"…" should "…" in onConsole(…)`.
+ *
+ * It is `pure`'s counterpart for this carrier and stands in exactly the same place — `in` takes plain data, so it
+ * cannot tell the two apart. `input` is what `readLine` will hand out, in order.
+ */
+def onConsole(input: List[String], body: Recorded[Unit]): Outcome =
+   first(runRecorded(body)(Session(input, "")))
+
+/**
+ * Running effectful production code and answering what it wrote, for a **run-then-assert** test: the run happens here,
+ * where there is no ambient carrier to write the callee at, and the assertion happens in an ordinary `pure` body.
+ */
+def transcriptOf(input: List[String], program: Recorded[Unit]): String =
+   written(second(runRecorded(program)(Session(input, ""))))

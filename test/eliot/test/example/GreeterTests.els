@@ -1,0 +1,80 @@
+import eliot.collection.List
+import eliot.test.Assertion
+import eliot.test.Test
+import eliot.test.example.Greeter
+import eliot.test.example.FakeConsole
+
+/**
+ * **One suite, four kinds of test.** Pure unit tests that may perform nothing at all, run-then-assert tests over
+ * effectful code, tests performing real effects inline, and direct-style tests interleaving *faked* effects with
+ * assertions — registered side by side in one `testCases`, reported by the one runner, counted in the one summary.
+ *
+ * They mix because `in` discharges only the assertion effect: what a body may do is decided by this suite's declared
+ * row (which admits `{Console}`), by `pure` where a case opts out of effects entirely, and by the carrier an author's
+ * own word names where a case wants a fake. No carrier is named here, and none is pinned.
+ */
+def testCases: {Writer[List[TestResult]], Console} Unit = {
+   // --- 1. a pure unit test: the body may assert and nothing else --------------------------------------------------
+   // `Id` has no `Suspend`, so a `printLine` in here is a compile error rather than a test that quietly does I/O.
+   "greeting" should "address the name it was given" in pure {
+      greeting("Bob") shouldBe "Hello, Bob!"
+   }
+   "greeting" should "not be the bare name" in pure {
+      greeting("Bob") shouldNotBe "Bob"
+   }
+
+   // --- 2. run-then-assert over effectful code --------------------------------------------------------------------
+   // The fake run sits in its own definition below; what reaches the assertion is a plain `String`.
+   "greet" should "greet whoever the console offers" in pure {
+      greetTranscript shouldBe "Hello, Bob!\n"
+   }
+   "greet" should "fall back to a stranger on no input" in pure {
+      silentGreetTranscript shouldBe "Hello, stranger!\n"
+   }
+
+   // --- 3. real effects, written inline ----------------------------------------------------------------------------
+   // The suite's row declares `{Console}`, so a body may perform it — on whatever carrier the runner was compiled to.
+   // Nothing here names a carrier, and the body needs no definition of its own.
+   "real effects" should "be available to a body whose suite declares them" in {
+      printLine(" | (this line was printed by a test performing a real Console effect)")
+      success
+   }
+
+   // --- 4. direct-style over a faked carrier -----------------------------------------------------------------------
+   // The body performs the faked console and asserts *between* its steps. Same suite, same runner, same summary.
+   "farewell" should "say goodbye, then invite a return" in orRaise(farewellOutcome)
+}
+
+/**
+ * The fake run for the first run-then-assert case. It must be a definition of its own: a region writes every
+ * carrier-generic callee at *its* carrier, and the suite above is pinned to the `Writer` stack, so `greet` written
+ * there would be written at that stack rather than at `Recorded`.
+ */
+private def greetTranscript: String = transcriptOf(singleton("Bob"), greet)
+
+/**
+ * The same, with nothing to read: `readLine` answers `None` and `greet`'s own `orElse` supplies the fallback.
+ */
+private def silentGreetTranscript: String = transcriptOf(empty, greet)
+
+/**
+ * The discharge of the direct-style body. Like every fake run it needs a definition with no ambient carrier of its
+ * own, so a direct-style case costs two definitions: the body, and the word that runs it.
+ */
+private def farewellOutcome: Outcome = onConsole(empty, farewellScript)
+
+/**
+ * A direct-style test body: it declares the effects it performs as an ordinary **open** row and names no carrier, so
+ * `onConsole`'s `Recorded[Unit]` slot is what instantiates it. Note the assertion in the middle — the run is not over
+ * when it is checked, and a failure there stops the steps after it.
+ *
+ * It is a definition of its own for the same reason `greetTranscript` is, and additionally because only a *saturated
+ * call to a callee with a declared row* is deferred to the post-monomorphization effect channel; an inline `{ … }`
+ * block at the `in` site is charged to the enclosing suite instead.
+ */
+private def farewellScript: {Console, Transcript, Throw[AssertionError]} Unit = {
+   printLine("--")
+   transcript shouldBe "--\n"
+   farewell("Bob")
+   transcript shouldBe "--\nGoodbye, Bob.\nCome back soon!\n"
+}
