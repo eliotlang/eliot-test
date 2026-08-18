@@ -106,9 +106,16 @@ value literally named `testCases`, of type `Test`, across all modules on the com
 tests, declare `def testCases: {Writer[List[TestResult]] | Id} Unit = { "…" should "…" in pure { … } … }`
 in any module inside a compiled source root — the type is `Test` spelled out, because a reflected value
 may not declare the closed-row alias as of `eb163b1`, even though `in` itself now returns the alias (see `in` above);
-`test/eliot/test/BasicAssertionsTests.els` is the worked example. It is picked up simply
+`test/eliot/test/BasicAssertionsTests.els` is the worked example for pure cases, and
+`test/eliot/test/example/GreeterTests.els` for the effectful ones. It is picked up simply
 by being on the path; nothing references it. (One `testCases` per module — the reflection gathers one
 value per module under that name, the way `PluginRegistry` gathers `contribution`.)
+
+> **Watch the build cache.** The compiler caches facts in the output directory (`target/.eliot-*`), and a
+> `NamedValuesIndex` was once observed surviving a module's addition, so a newly added suite silently did not
+> run while the build reported success — tests that do not run look exactly like tests that pass. It has not
+> reproduced since; if a suite you just wrote does not appear in the report, `rm target/.eliot-*` and rebuild
+> before looking anywhere else.
 
 ## Testing effectful code
 
@@ -116,25 +123,85 @@ A `pure` body cannot perform I/O, which is the point — but production code tha
 effect) is still testable, because **the carrier is the injection point** (the compiler's own
 `docs/testing-effects.md`, and `examples/src/EffectsTestFramework.els`). The test declares its own pure
 carrier and its own instance of the ability for it; production code is untouched and names no carrier.
+`test/eliot/test/example/` is the worked example: `Greeter` is the application under test, `FakeConsole` is
+the carrier and its discharge words, and `GreeterTests` registers all three test styles in **one** suite.
 
-The shape is **run-then-assert**, and the ordering is forced: the fake run must sit in a definition with *no
-ambient carrier of its own*, because a region writes every carrier-generic callee at its own carrier. So the
-run cannot go inside the `pure { … }` body — it goes in a plain `def` beside it, and the body asserts on the
-value that answers:
+**`in` takes plain data, so styles mix freely.** The word between `in` and its argument is what ran the body
+and what decided which effects the body was allowed to perform; by the time a case is registered all that is
+left is the verdict. `pure` is the framework's word, a test author's own word stands in the same place, and
+the runner, the subject grouping and the summary cannot tell them apart.
+
+### Run-then-assert
+
+The fake run must sit in a definition with *no ambient carrier of its own*, because a region writes every
+carrier-generic callee at its own carrier. So the run cannot go inside the `pure { … }` body — it goes in a
+plain `def` beside it, and the body asserts on the value that answers:
 
 ```eliot
-def greetTranscript: String = transcriptOf(greet("Bob"))   // fake run: its own definition
+private def greetTranscript: String = transcriptOf(singleton("Bob"), greet)   // fake run: its own definition
 
-"greet" should "greet the name it was given" in pure {
-   greetTranscript shouldBe "Hello, Bob!;"                 // assertion: the framework's body
+"greet" should "greet whoever the console offers" in pure {
+   greetTranscript shouldBe "Hello, Bob!\n"                                   // assertion: the framework's body
 }
 ```
 
-Asserting *part-way through* a faked run is not possible: pinning the assertion effect over the fake carrier
-(`{Throw[AssertionError] | Session} Unit`) fails because a fake's abilities have no canonical carrier to be
-row entries, and because the ability would need an instance for the whole stack rather than the base. That is
-L3 in `docs/testing-effects.md`, whose proposed `{| Session}` capture tag would lift it; it is a convenience,
-not a prerequisite.
+### Direct style, asserting part-way through a faked run
+
+This **does** work, contrary to L3 in the compiler's `docs/testing-effects.md` — but not the way L3 tried it.
+Pinning the assertion effect *over* the fake carrier (`{Throw[AssertionError] | Session} Unit`) does fail, for
+the two reasons L3 records: a fake's abilities have no canonical carrier, so they cannot be pinned-row entries,
+and the ability would need an instance for the whole stack rather than the base. The move that works is to stop
+stacking: give the **fake carrier itself** a `Throw[AssertionError]` instance, so assertions ride the same
+carrier as the faked effects. No row is pinned, so no cross-lift is needed:
+
+```eliot
+data Recorded[A](runRecorded: Session => Pair[Either[AssertionError, A], Session])
+
+implement Console[Recorded] { … }                       // the faked effect
+implement Throw[AssertionError, Recorded] {             // …and assertions, on the same carrier
+   def raise[A](err: AssertionError): Recorded[A] = Recorded(s -> Pair(Left(err), s))
+}
+
+def onConsole(input: List[String], body: Recorded[Unit]): Outcome =   // the author's own discharge word
+   first(runRecorded(body)(Session(input, "")))
+```
+
+`Effect[Recorded]`'s `flatMap` short-circuits on a `Left`, so a failed assertion stops the rest of the body the
+way a real failure stops a real test. The body then reads as an ordinary script:
+
+```eliot
+private def farewellOutcome: Outcome = onConsole(empty, farewellScript)
+
+private def farewellScript: {Console, Transcript, Throw[AssertionError]} Unit = {
+   printLine("--")
+   transcript shouldBe "--\n"                          // asserted mid-run, before the rest happens
+   farewell("Bob")
+   transcript shouldBe "--\nGoodbye, Bob.\nCome back soon!\n"
+}
+```
+
+Two definitions are forced, and both for the same reason as run-then-assert. The **body** must be its own `def`
+because only a *saturated call to a callee with a declared row* is deferred to the post-monomorphization effect
+channel (`RowChecker.fixesCarrier`); an inline `{ … }` block at the `in` site is charged to the enclosing suite
+instead ("performs the effects 'Console', 'Throw', 'Transcript' but does not declare them"). The **discharge**
+must be its own `def` because the suite is a pinned region, and a call written there is written at the suite's
+own `Writer` stack (`Expected: {Writer[…] | Id} Recorded[Unit]`).
+
+### What does not work
+
+- **No real I/O anywhere in a suite.** `Console` and `Log` have no canonical carrier, so they cannot be entries
+  in a pinned row, and a suite type must be pinned for reflection to gather it. Pinning to the platform's `IO`
+  does not help — `{Writer[List[TestResult]] | IO} Unit` still reports "performs the effect 'Console' but does
+  not declare it", and `in` returns an `Id`-pinned `Test` that cannot be sequenced into it. Every effect a test
+  performs is a *faked* effect; a test that touches the real console or filesystem has no shape here today.
+- **`Throw` composes with no other stdlib control effect over `Id`.** The cross-lift matrix has no
+  `Throw[E, StateCarrier[…]]`, `State[S, ThrowCarrier[…]]`, `Throw[E, DepCarrier[…]]` or
+  `Dep[X, ThrowCarrier[…]]`, so a discharge word over a pinned stack (`{Throw[AssertionError], State[S] | Id}`,
+  either pin order) does not compile. This is why the direct-style route goes through a single custom carrier
+  rather than a stack — and the same single-carrier trick serves `State`/`Dep` fakes too.
+- **`expect` and `message` pin their body to `| Id`,** so they wrap self-contained assertions inside a
+  custom-carrier body (that much compiles and runs) but cannot wrap an assertion that itself reads the fake:
+  `transcript shouldBe "…" message "…"` fails with "The effect 'Transcript' cannot run here…".
 
 The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, which prints one `✔`/`✗` line
 per test subject with its pass and failure counts, then a closing summary line for the whole run.
