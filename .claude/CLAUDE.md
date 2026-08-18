@@ -46,12 +46,13 @@ three tiny modules plus a self-test:
     tests run where they are written and only verdicts are collected. A word taking arguments works the same
     way by currying: `in myCarrier(input) { … }`.
 
-  `in` **spells its pinned row out** rather than returning `Test`. A closed-row alias is not yet carried in
-  both positions that matter: before compiler `eb163b1` the alias was rejected in a definition's return
-  position, and as of `eb163b1` it is instead rejected where a reflected value declares it (`namedValues[Test]`
-  over `def testCases: Test` ⤳ "This argument is a computation, but argument 2 of 'append' declares no effect
-  row"). The spelled-out row compiles either way; once the compiler carries a closed-row alias in both, this
-  can simply become `Test`.
+  `in` **spells its pinned row out** rather than returning `Test`, and so does the reflected `testCases` value
+  (see reflection below). A closed-row alias is not carried in the two positions that matter: before compiler
+  `eb163b1` the alias was rejected in a definition's return position, and as of `eb163b1` it is instead rejected
+  where a reflected value declares it (`namedValues[Test]` over `def testCases: Test` ⤳ "This argument is a
+  computation, but argument 2 of 'append' declares no effect row"). The spelled-out row compiles either way, so
+  both `in`'s return and `testCases` write it out; once the compiler carries a closed-row alias in both
+  positions, each can simply become `Test`.
 - `eliot.test.Assertion` — `data AssertionError = Failed | NotEqual | UnexpectedlyEqual | NoErrorRaised`, a sum
   of *failure shapes* carrying the already-rendered values (assertions `show` at the raise site, where the
   instance is known; how a shape is presented is the runner's job). `Eq[AssertionError]` is structural — same
@@ -103,8 +104,10 @@ three tiny modules plus a self-test:
 reflection — there is no central list, no annotations, no import wiring.** The runner calls
 `namedValues[Test]("testCases")` (from `eliot.compiler.Reflect`), which reifies *every* top-level
 value literally named `testCases`, of type `Test`, across all modules on the compiler path. To add
-tests, declare `def testCases: Test = { "…" should "…" in pure { … } … }` in any module inside a compiled
-source root — `test/eliot/test/BasicAssertionsTests.els` is the worked example. It is picked up simply
+tests, declare `def testCases: {Writer[List[TestResult]] | Id} Unit = { "…" should "…" in pure { … } … }`
+in any module inside a compiled source root — the type is `Test` spelled out, because a reflected value
+may not declare the closed-row alias as of `eb163b1` (see `in` above);
+`test/eliot/test/BasicAssertionsTests.els` is the worked example. It is picked up simply
 by being on the path; nothing references it. (One `testCases` per module — the reflection gathers one
 value per module under that name, the way `PluginRegistry` gathers `contribution`.)
 
@@ -137,11 +140,13 @@ not a prerequisite.
 The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, which prints one `✔`/`✗` line
 per test subject with its pass and failure counts, then a closing summary line for the whole run.
 
-> **Compiler version.** Verified against compiler `f7a546b`. Needs the ambient **`Writer` effect** +
+> **Compiler version.** Builds on compiler `f7a546b` and on `eb163b1`. Needs the ambient **`Writer` effect** +
 > **`Combine[List]` monoid** (shipped 2026-07-21 — `Writer` is `State` restricted to append-only, `Combine`
 > gained `empty`). It no longer needs pinned effect-row `data` fields at all — no `data` here stores a row.
-> **Does not build on `eb163b1`**, which regressed closed-row aliases at reflected values (see `in` above);
-> that is a compiler bug, not a change this project should absorb.
+> **`eb163b1` regressed closed-row aliases at reflected values** — it rejects the `Test` alias where a
+> reflected value declares it — so both `in`'s return and the `testCases` value spell their pinned row out
+> (`{Writer[List[TestResult]] | Id} Unit`, see `in` above); the spelled-out form compiles on either compiler.
+> That regression is a compiler bug, and the spelled-out row is the minimal way to keep building across it.
 
 ## Building and running (compiler CLI)
 
