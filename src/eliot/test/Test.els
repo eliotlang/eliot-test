@@ -48,8 +48,8 @@ infix none def should(subject: String, shouldPhrase: String): TestCase =
  * what runs the body and constrains what the body was allowed to do: `"…" should "…" in pure { … }` for a unit test.
  * Because the outcome is an argument, the body has already run by the time the case is registered.
  *
- * The pinned row is spelled out rather than written as `Test`: a closed-row alias is not yet carried in both a
- * definition's return position and a reflected value's, so the spelled-out form is the one that compiles either way.
+ * The return type is the `Test` alias itself: since compiler `eb163b1` a closed-row alias is carried in a definition's
+ * return position, so registering a case says what it produces — a suite — rather than restating that suite's row.
  */
-infix none below should def in(testCase: TestCase, outcome: Outcome): {Writer[List[TestResult]] | Id} Unit =
+infix none below should def in(testCase: TestCase, outcome: Outcome): Test =
    tell(singleton(TestResult(testCase, outcome)))
