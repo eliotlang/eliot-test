@@ -1,7 +1,13 @@
+import eliot.lang.Id
+import eliot.collection.List
 import eliot.test.Assertion
 import eliot.test.Test
 
-def testCases: Test = {
+// The pinned row is spelled out rather than written as `Test`: as of compiler `eb163b1` a closed-row
+// alias is rejected where a *reflected* value declares it (`namedValues[Test]` over `def testCases: Test`
+// ⤳ "argument 2 of 'append' declares no effect row"). The spelled-out row compiles either way; once the
+// compiler carries a closed-row alias at a reflected value, this can simply become `Test` again.
+def testCases: {Writer[List[TestResult]] | Id} Unit = {
    "shouldBe" should "pass when given two equal strings" in pure {
       "hello" shouldBe "hello"
    }
