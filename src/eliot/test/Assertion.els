@@ -82,10 +82,18 @@ def fail(reason: String): {Throw[AssertionError]} Unit = raise(Failed(reason))
 /**
  * Expect the given `error` to be raised by `body`: passes when the raised error equals `error`, raises
  * `NotEqual` when the body raises a different error and `NoErrorRaised` when it completes without raising.
+ *
+ * The body's row is **open**: `{Throw[E]}` supplies one `Throw[E]` layer over whatever carrier the enclosing case
+ * runs on, rather than pinning the body to `Id`. So `expect` composes with a case that performs — a real effect where
+ * the suite declares one, or a faked one — and not only with a pure case. What it still cannot wrap is a body that
+ * reads a *fake* carrier, since the supplied layer stacks a `ThrowCarrier` over that carrier and a fake deliberately
+ * has no `Suspend` instance to lift its abilities through; see the framework notes on lifting.
  */
-def expect[E ~ Eq & Show](error: E, body: {Throw[E] | Id} Unit): {Throw[AssertionError]} Unit =
-   outcomeOf(body)
-      .foldEither(raised -> raised shouldBe error, _ -> raise(NoErrorRaised(show(error))))
+def expect[E ~ Eq & Show](error: E, body: {Throw[E]} Unit): {Throw[AssertionError]} Unit = {
+   val outcome = runThrow(body)
+
+   outcome.foldEither(raised -> raised shouldBe error, _ -> raise(NoErrorRaised(show(error))))
+}
 
 /**
  * Assert that `expected` and `actual` are equal (by their `Eq` instance), raising `NotEqual` with both
@@ -104,6 +112,11 @@ infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A): {Thr
 /**
  * Rewrite the failure message: runs `body` and, when it raises any `AssertionError`, re-raises it as a
  * `Failed` carrying `newMessage`. A passing body is left untouched.
+ *
+ * Unlike `expect`, this one stays pinned to `Id`, and the reason is a language rule rather than a choice: a parameter
+ * row entry is *supplied* — stacked as an extra layer — only when the definition's own declared return row does not
+ * already name it. `message` raises `Throw[AssertionError]` itself, so a `{Throw[AssertionError]}` parameter row would
+ * denote the very same carrier rather than one layer above it, and there would be nothing to discharge.
  */
 infix left below shouldBe def message(body: {Throw[AssertionError] | Id} Unit, newMessage: String): {Throw[AssertionError]} Unit =
    outcomeOf(body)

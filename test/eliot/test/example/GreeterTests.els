@@ -40,9 +40,19 @@ def testCases: {Writer[List[TestResult]], Console} Unit = {
       success
    }
 
+   // --- 3b. `expect` over a body that performs -----------------------------------------------------------------
+   // `expect`'s body row is open, so it supplies one `Throw` layer over the suite's own carrier instead of pinning
+   // the body to `Id`. A body that prints *and* raises is therefore checkable, which a pinned body could never be.
+   "expect" should "wrap a body that performs a real effect while it raises" in {
+      expect(Failed("after printing"), {
+         printLine(" | (printed by a body wrapped in `expect`)")
+         fail("after printing")
+      })
+   }
+
    // --- 4. direct-style over a faked carrier -----------------------------------------------------------------------
    // The body performs the faked console and asserts *between* its steps. Same suite, same runner, same summary.
-   "farewell" should "say goodbye, then invite a return" in orRaise(farewellOutcome)
+   "farewell" should "say goodbye, then invite a return" in verdict(farewellOutcome)
 }
 
 /**
