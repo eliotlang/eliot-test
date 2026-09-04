@@ -173,9 +173,10 @@ effect, so a body running on it is structurally incapable of touching the real c
 
 ### Run-then-assert
 
-The fake run must sit in a definition with *no ambient carrier of its own*, because a region writes every
-carrier-generic callee at its own carrier. So the run cannot go inside the `pure { … }` body — it goes in a
-plain `def` beside it, and the body asserts on the value that answers:
+A fake run inside a `pure { … }` body would be written at that body's own carrier, so the run goes in a plain
+`def` beside it and the body asserts on the value that answers. (This style is a *choice*, not a requirement —
+since the capture tag a run may be written inline; run-then-assert is still the clearer shape when the assertion
+is about a finished transcript rather than the steps.)
 
 ```eliot
 private def greetTranscript: String = transcriptOf(singleton("Bob"), greet)   // fake run: its own definition
@@ -226,13 +227,17 @@ private def farewellScript: {Console, Transcript, Throw[AssertionError]} Unit = 
 }
 ```
 
-Two definitions are forced for a *faked* case — and only for a faked one, since a real-effect body is written
-inline. Both are the **region rule**, not the effect accounting: a foreign concrete carrier can only be
-instantiated in a region with no ambient carrier of its own, and the suite is a region, so a fake run written
-there is written at the suite's own `Writer` stack (compiler `docs/effects.md` §7.7 — this is the one remaining
-cost of a faked case, and W3 is the entry that would remove it). What each `def`'s body may contain is no longer
-restricted: since the compiler's block peel a multi-statement `{ … }` block handed to a `Recorded[Unit]` slot is
-deferred exactly as a single call always was, so a fake run may have a prologue without needing a third `def`.
+**A faked case now costs no helper definitions at all**, because `onConsole` declares its body slot with the
+**capture tag** `{| Recorded} Unit` — the pinned row at zero entries, which is the same type as `Recorded[Unit]`
+but declares that the slot *hosts a computation on that carrier* (compiler `docs/effects.md` §2.3, shipped as W3
+on 2026-09-04). The tag makes the slot a capture, so the elaborator writes nothing into it and the checker
+instantiates the body at `Recorded` — even at the `in` site, inside the suite's own region. Both the run and a
+multi-statement body are written inline.
+
+Without the tag the **region rule** still governs, and it is worth knowing why the two definitions used to be
+forced: a foreign concrete carrier can only be instantiated in a region with no ambient carrier of its own, and
+the suite is a region, so an untagged fake run written there is written at the suite's own `Writer` stack. That
+is what `transcriptOf`'s and `onConsole`'s tags now opt out of.
 
 ### The one rule to internalize about fakes: do not stack over them
 

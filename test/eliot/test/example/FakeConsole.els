@@ -79,13 +79,18 @@ implement Transcript[Recorded] {
  *
  * It is `pure`'s counterpart for this carrier and stands in exactly the same place — `in` takes plain data, so it
  * cannot tell the two apart. `input` is what `readLine` will hand out, in order.
+ *
+ * The slot is the **capture tag** `{| Recorded} Unit` — the pinned row at zero entries, which is the same type as
+ * `Recorded[Unit]` but declares that the slot hosts a computation on that carrier. That is what lets the body be
+ * written inline at the `in` site, inside the suite's own region, instead of needing a definition with no ambient
+ * carrier of its own.
  */
-def onConsole(input: List[String], body: Recorded[Unit]): Outcome =
+def onConsole(input: List[String], body: {| Recorded} Unit): Outcome =
    first(runRecorded(body)(Session(input, "")))
 
 /**
  * Running effectful production code and answering what it wrote, for a **run-then-assert** test: the run happens here,
  * where there is no ambient carrier to write the callee at, and the assertion happens in an ordinary `pure` body.
  */
-def transcriptOf(input: List[String], program: Recorded[Unit]): String =
+def transcriptOf(input: List[String], program: {| Recorded} Unit): String =
    written(second(runRecorded(program)(Session(input, ""))))

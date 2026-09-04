@@ -52,7 +52,12 @@ def testCases: {Writer[List[TestResult]], Console} Unit = {
 
    // --- 4. direct-style over a faked carrier -----------------------------------------------------------------------
    // The body performs the faked console and asserts *between* its steps. Same suite, same runner, same summary.
-   "farewell" should "say goodbye, then invite a return" in verdict(farewellOutcome)
+   "farewell" should "say goodbye, then invite a return" in verdict(onConsole(empty, {
+      printLine("--")
+      transcript shouldBe "--\n"
+      farewell("Bob")
+      transcript shouldBe "--\nGoodbye, Bob.\nCome back soon!\n"
+   }))
 }
 
 /**
@@ -66,25 +71,3 @@ private def greetTranscript: String = transcriptOf(singleton("Bob"), greet)
  * The same, with nothing to read: `readLine` answers `None` and `greet`'s own `orElse` supplies the fallback.
  */
 private def silentGreetTranscript: String = transcriptOf(empty, greet)
-
-/**
- * The discharge of the direct-style body. Like every fake run it needs a definition with no ambient carrier of its
- * own, so a direct-style case costs two definitions: the body, and the word that runs it.
- */
-private def farewellOutcome: Outcome = onConsole(empty, farewellScript)
-
-/**
- * A direct-style test body: it declares the effects it performs as an ordinary **open** row and names no carrier, so
- * `onConsole`'s `Recorded[Unit]` slot is what instantiates it. Note the assertion in the middle — the run is not over
- * when it is checked, and a failure there stops the steps after it.
- *
- * It is a definition of its own for the same reason `greetTranscript` is, and additionally because only a *saturated
- * call to a callee with a declared row* is deferred to the post-monomorphization effect channel; an inline `{ … }`
- * block at the `in` site is charged to the enclosing suite instead.
- */
-private def farewellScript: {Console, Transcript, Throw[AssertionError]} Unit = {
-   printLine("--")
-   transcript shouldBe "--\n"
-   farewell("Bob")
-   transcript shouldBe "--\nGoodbye, Bob.\nCome back soon!\n"
-}
