@@ -64,7 +64,7 @@ implement Show[AssertionError] {
 def pure(body: {Throw[AssertionError] | Id} Unit): {Throw[AssertionError]} Unit = orRaise(outcomeOf(body))
 
 /**
- * Run a pure body down to its verdict as plain data — what `pure`, `expect` and `message` are each built from, and the
+ * Run a pure body down to its verdict as plain data — what `pure`, `expect` and `describedAs` are each built from, and the
  * one place in the framework that names a carrier.
  */
 def outcomeOf[E, A](body: {Throw[E] | Id} A): Either[E, A] = runId(runThrow(body))
@@ -103,6 +103,21 @@ infix def shouldBe[A ~ Eq & Show](actual: A, expected: A): {Throw[AssertionError
    if(actual == expected) unit else raise(NotEqual(show(expected), show(actual)))
 
 /**
+ * Assert that `actual` is `true`, raising `Failed` otherwise: `exists(path("/tmp/x")).shouldBeTrue`.
+ *
+ * A word of its own because `Bool` has no `Show` instance, so `shouldBe true` does not compile — and a
+ * predicate is exactly the thing a test asserts on most often after a value.
+ */
+def shouldBeTrue(actual: Bool): {Throw[AssertionError]} Unit =
+   fold(actual, success, raise(Failed("expected true, but was false")))
+
+/**
+ * Assert that `actual` is `false`, raising `Failed` otherwise: `isDirectory(path("/tmp/x")).shouldBeFalse`.
+ */
+def shouldBeFalse(actual: Bool): {Throw[AssertionError]} Unit =
+   fold(actual, raise(Failed("expected false, but was true")), success)
+
+/**
  * Assert that `actual` differs from `unexpected` (by their `Eq` instance), raising `UnexpectedlyEqual` with
  * the rendered value both sides turned out to be otherwise.
  */
@@ -113,11 +128,14 @@ infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A): {Thr
  * Rewrite the failure message: runs `body` and, when it raises any `AssertionError`, re-raises it as a
  * `Failed` carrying `newMessage`. A passing body is left untouched.
  *
+ * Named `describedAs` rather than `message` because `eliot.file.File` exports a `message` too, and no file may
+ * import both — which would have barred every test that both asserts and names a file.
+ *
  * Unlike `expect`, this one stays pinned to `Id`, and the reason is a language rule rather than a choice: a parameter
  * row entry is *supplied* — stacked as an extra layer — only when the definition's own declared return row does not
- * already name it. `message` raises `Throw[AssertionError]` itself, so a `{Throw[AssertionError]}` parameter row would
+ * already name it. `describedAs` raises `Throw[AssertionError]` itself, so a `{Throw[AssertionError]}` parameter row would
  * denote the very same carrier rather than one layer above it, and there would be nothing to discharge.
  */
-infix left below shouldBe def message(body: {Throw[AssertionError] | Id} Unit, newMessage: String): {Throw[AssertionError]} Unit =
+infix left below shouldBe def describedAs(body: {Throw[AssertionError] | Id} Unit, newMessage: String): {Throw[AssertionError]} Unit =
    outcomeOf(body)
       .foldEither(_ -> fail(newMessage), _ -> success)

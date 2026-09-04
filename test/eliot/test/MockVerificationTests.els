@@ -1,0 +1,207 @@
+import eliot.collection.List
+import eliot.file.Path
+import eliot.system.Process
+import eliot.test.Assertion
+import eliot.test.Test
+import eliot.test.Mock
+
+/**
+ * The verification vocabulary — what a test asks *about the calls* rather than about the answer.
+ *
+ * Each word is tested both ways: that it passes when it should, and that it fails when it should. The
+ * failing direction is checked with `raising`, which is how a mocked body expects a raise — including one
+ * from an assertion, since an assertion is a raise like any other here.
+ */
+def testCases: {Writer[List[TestResult]]} Unit = {
+   "calls" should "answer every call in order, joined" in mocked {
+      printLine("one")
+      printLine("two")
+
+      calls shouldBe "printLine one; printLine two"
+   }
+   "calls" should "answer empty before anything is asked" in mocked {
+      calls shouldBe ""
+   }
+   "callsMatching" should "answer only the calls containing the fragment" in mocked {
+      printLine("keep this")
+      log("drop this")
+      printLine("keep that")
+
+      callsMatching("printLine") shouldBe "printLine keep this; printLine keep that"
+   }
+   "lastCall" should "answer the most recent call" in mocked {
+      printLine("first")
+      printLine("last")
+
+      lastCall shouldBe "printLine last"
+   }
+   "lastCall" should "answer nothing before anything is asked" in mocked {
+      lastCall shouldBe "<none>"
+   }
+   "callCount" should "count the calls containing the fragment" in mocked {
+      printLine("a")
+      printLine("b")
+      log("c")
+
+      callCount("printLine") shouldBe 2
+      callCount("log") shouldBe 1
+      callCount("readLine") shouldBe 0
+   }
+   "wasCalled" should "pass when a call contained the fragment" in mocked {
+      printLine("hello there")
+
+      wasCalled("hello")
+   }
+   "wasCalled" should "fail, naming the calls, when nothing matched" in mocked {
+      printLine("hello")
+
+      raising("expected a call containing 'goodbye'", wasCalled("goodbye"))
+   }
+   "wasNeverCalled" should "pass when nothing matched" in mocked {
+      printLine("hello")
+
+      wasNeverCalled("goodbye")
+   }
+   "wasNeverCalled" should "fail, showing what was found, when something matched" in mocked {
+      printLine("hello")
+
+      raising("expected no call containing 'hello'", wasNeverCalled("hello"))
+   }
+   "wasCalledOnce" should "pass for exactly one matching call" in mocked {
+      printLine("only")
+
+      wasCalledOnce("only")
+   }
+   "wasCalledOnce" should "fail for a second matching call" in mocked {
+      printLine("twice")
+      printLine("twice")
+
+      raising("exactly 1 calls containing 'twice'", wasCalledOnce("twice"))
+   }
+   "wasCalledTimes" should "pass for exactly that many matching calls" in mocked {
+      printLine("a")
+      printLine("a")
+      printLine("a")
+
+      wasCalledTimes(3, "printLine a")
+   }
+   "wasCalledTimes" should "fail when the count differs" in mocked {
+      printLine("a")
+
+      raising("exactly 2 calls", wasCalledTimes(2, "printLine a"))
+   }
+   "wasCalledAtLeast" should "pass at the boundary and above it" in mocked {
+      printLine("a")
+      printLine("a")
+
+      wasCalledAtLeast(2, "printLine a")
+      wasCalledAtLeast(1, "printLine a")
+   }
+   "wasCalledAtLeast" should "fail below the boundary" in mocked {
+      printLine("a")
+
+      raising("at least 2 calls", wasCalledAtLeast(2, "printLine a"))
+   }
+   "wasCalledAtMost" should "pass at the boundary and below it" in mocked {
+      printLine("a")
+
+      wasCalledAtMost(1, "printLine a")
+      wasCalledAtMost(5, "printLine a")
+   }
+   "wasCalledAtMost" should "fail above the boundary" in mocked {
+      printLine("a")
+      printLine("a")
+
+      raising("at most 1 calls", wasCalledAtMost(1, "printLine a"))
+   }
+   "wereCalledInOrder" should "pass when the calls happened in that order" in mocked {
+      printLine("first")
+      log("in between")
+      printLine("second")
+
+      wereCalledInOrder(append(singleton("printLine first"), "printLine second"))
+   }
+   "wereCalledInOrder" should "fail when they happened in the other order" in mocked {
+      printLine("second")
+      printLine("first")
+
+      raising("expected calls in order", wereCalledInOrder(append(singleton("printLine first"), "printLine second")))
+   }
+   "nothingWasCalled" should "pass when no double was asked anything" in mocked {
+      nothingWasCalled
+   }
+   "nothingWasCalled" should "fail as soon as something was" in mocked {
+      printLine("something")
+
+      raising("expected no calls", nothingWasCalled)
+   }
+   "onlyTheseWereCalled" should "pass when every call was expected" in mocked {
+      printLine("expected one")
+      log("expected two")
+
+      onlyTheseWereCalled(append(singleton("printLine"), "log"))
+   }
+   "onlyTheseWereCalled" should "fail, naming the surprise, when something else was called too" in mocked {
+      printLine("expected")
+      log("a surprise")
+
+      raising("unexpected calls: log a surprise", onlyTheseWereCalled(singleton("printLine")))
+   }
+   "forgetCalls" should "clear the calls while keeping the arrangements" in mocked {
+      whenSpawning("ls-remote", succeeding("v1.0"))
+      run(command("git").withArgument("ls-remote"), path("."))
+
+      forgetCalls
+
+      nothingWasCalled
+      run(command("git").withArgument("ls-remote"), path(".")).standardOutput shouldBe "v1.0"
+   }
+   "raising" should "pass when the body raised what was expected" in mocked {
+      raising("boom", failedWith("boom"))
+   }
+   "raising" should "match a report by containment, not by the whole text" in mocked {
+      raising("middle", failedWith("start middle end"))
+   }
+   "raising" should "fail when the body raised something else" in mocked {
+      raising("but got 'Failed(other)'", raising("expected", failedWith("other")))
+   }
+   "raising" should "fail when the body raised nothing at all" in mocked {
+      raising("but nothing was raised", raising("expected", printLine("no raise here")))
+   }
+   "raising" should "keep the calls the body made before it raised" in mocked {
+      raising("boom", printedThenFailed)
+
+      wasCalled("printLine before the raise")
+   }
+   "a mocked body" should "stop at the first raise, so nothing after it runs" in mocked {
+      raising("boom", printedThenFailed)
+
+      wasNeverCalled("printLine after the raise")
+   }
+   "an arrangement" should "be shareable as an ordinary definition, which is this framework's @Before" in mocked {
+      twoLinesReady
+
+      run(command("git").withArgument("ls-remote"), path(".")).standardOutput shouldBe "v1.0\nv1.1"
+   }
+}
+
+/**
+ * A body that raises a plain reported failure, for testing `raising` itself.
+ */
+private def failedWith(report: String): {Throw[AssertionError]} Unit = raise(Failed(report))
+
+/**
+ * A body that does something *and then* raises, so the calls it made before raising can be verified.
+ */
+private def printedThenFailed: {Console, Throw[AssertionError]} Unit = {
+   printLine("before the raise")
+
+   raise(Failed("boom"))
+
+   printLine("after the raise")
+}
+
+/**
+ * A shared arrangement: an ordinary `{Mocking}` definition, called at the top of a body.
+ */
+private def twoLinesReady: {Mocking} Unit = whenSpawning("ls-remote", succeeding("v1.0\nv1.1"))

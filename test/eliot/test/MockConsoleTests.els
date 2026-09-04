@@ -1,0 +1,55 @@
+import eliot.collection.List
+import eliot.test.Assertion
+import eliot.test.Test
+import eliot.test.Mock
+
+/**
+ * The console and log doubles: what they record, and what they answer.
+ */
+def testCases: {Writer[List[TestResult]]} Unit = {
+   "printLine" should "record what was printed" in mocked {
+      printLine("hello")
+
+      calls shouldBe "printLine hello"
+   }
+   "printLine" should "record every line, in order" in mocked {
+      printLine("first")
+      printLine("second")
+
+      calls shouldBe "printLine first; printLine second"
+   }
+   "readLine" should "hand out the arranged input, in order" in mocked {
+      whenReading(append(singleton("Ann"), "Bob"))
+
+      (readLine orElse "<none>") shouldBe "Ann"
+      (readLine orElse "<none>") shouldBe "Bob"
+   }
+   "readLine" should "answer end of input once the arranged input runs out" in mocked {
+      whenReading(singleton("only"))
+
+      (readLine orElse "<none>") shouldBe "only"
+      (readLine orElse "<none>") shouldBe "<none>"
+   }
+   "readLine" should "answer end of input when nothing was arranged at all" in mocked {
+      (readLine orElse "<none>") shouldBe "<none>"
+   }
+   "readLine" should "record a call whether or not there was input to give" in mocked {
+      readLine
+
+      calls shouldBe "readLine"
+   }
+   "whenReading" should "replace what is left, so a body can re-arm mid-test" in mocked {
+      whenReading(append(singleton("first"), "second"))
+
+      (readLine orElse "<none>") shouldBe "first"
+
+      whenReading(singleton("instead"))
+
+      (readLine orElse "<none>") shouldBe "instead"
+   }
+   "log" should "record the message, so a test can verify what was logged" in mocked {
+      log("something happened")
+
+      wasCalled("log something happened")
+   }
+}

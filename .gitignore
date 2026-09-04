@@ -2,3 +2,4 @@ eliot.paths
 target
 settings.local.json
 .eliot-lsp
+out/

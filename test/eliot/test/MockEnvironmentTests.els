@@ -1,0 +1,47 @@
+import eliot.collection.List
+import eliot.file.Path
+import eliot.system.Environment
+import eliot.test.Assertion
+import eliot.test.Test
+import eliot.test.Mock
+
+/**
+ * The environment double: the arguments, variables and working directory a test arranged, and the honest
+ * empties where it arranged none.
+ */
+def testCases: {Writer[List[TestResult]]} Unit = {
+   "arguments" should "answer what the test arranged" in mocked {
+      withArguments(append(singleton("build"), "--verbose"))
+
+      arguments.joined(" ") shouldBe "build --verbose"
+   }
+   "arguments" should "answer none where the test arranged none" in mocked {
+      arguments.size shouldBe 0
+   }
+   "environmentVariable" should "answer an arranged variable" in mocked {
+      withVariable("HOME", "/home/tester")
+
+      (environmentVariable("HOME") orElse "<unset>") shouldBe "/home/tester"
+   }
+   "environmentVariable" should "answer unset for a variable nobody arranged" in mocked {
+      (environmentVariable("NOWHERE") orElse "<unset>") shouldBe "<unset>"
+   }
+   "environmentVariable" should "keep an arranged empty value distinct from unset" in mocked {
+      withVariable("EMPTY", "")
+
+      (environmentVariable("EMPTY") orElse "<unset>") shouldBe ""
+   }
+   "environmentVariable" should "record which variable was asked for" in mocked {
+      environmentVariable("PATH")
+
+      calls shouldBe "environmentVariable PATH"
+   }
+   "workingDirectory" should "answer what the test arranged" in mocked {
+      withWorkingDirectory(path("/work"))
+
+      show(workingDirectory) shouldBe "/work"
+   }
+   "workingDirectory" should "answer the current directory where the test arranged none" in mocked {
+      show(workingDirectory) shouldBe "."
+   }
+}

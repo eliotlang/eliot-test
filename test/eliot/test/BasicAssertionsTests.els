@@ -32,10 +32,10 @@ def testCases: {Writer[List[TestResult]]} Unit = {
    "expect" should "raise NoErrorRaised when the body raises no error" in pure {
       expect(NoErrorRaised(show(Failed("boom"))), expect(Failed("boom"), success))
    }
-   "message" should "rewrite any failure to Failed with the new message" in pure {
-      expect(Failed("values differ"), "a" shouldBe "b" message "values differ")
+   "describedAs" should "rewrite any failure to Failed with the new message" in pure {
+      expect(Failed("values differ"), "a" shouldBe "b" describedAs "values differ")
    }
-   "message" should "leave a passing body passing" in pure {
-      "a" shouldBe "a" message "should not surface"
+   "describedAs" should "leave a passing body passing" in pure {
+      "a" shouldBe "a" describedAs "should not surface"
    }
 }

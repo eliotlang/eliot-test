@@ -1,0 +1,115 @@
+import eliot.collection.List
+import eliot.file.Path
+import eliot.file.File
+import eliot.test.Assertion
+import eliot.test.Test
+import eliot.test.Mock
+
+/**
+ * The filesystem double: a virtual tree of what a test arranged plus whatever the code under test wrote,
+ * every method recording the call it was asked.
+ *
+ * The twelve methods of `FileSystem` are the reason this framework owns the doubles rather than each project
+ * writing them: a suite calls three of them and needs all twelve to exist.
+ */
+def testCases: {Writer[List[TestResult]]} Unit = {
+   "readFile" should "answer what the test arranged" in mocked {
+      withFile(path("/etc/hosts"), "127.0.0.1 localhost")
+
+      readFile(path("/etc/hosts")) shouldBe "127.0.0.1 localhost"
+   }
+   "readFile" should "answer empty for a file nobody arranged" in mocked {
+      readFile(path("/nowhere")) shouldBe ""
+   }
+   "readFile" should "record the call" in mocked {
+      readFile(path("/etc/hosts"))
+
+      calls shouldBe "readFile /etc/hosts"
+   }
+   "writeFile" should "make the content readable afterwards" in mocked {
+      writeFile("written", path("/tmp/out"))
+
+      readFile(path("/tmp/out")) shouldBe "written"
+   }
+   "writeFile" should "make the file exist" in mocked {
+      writeFile("written", path("/tmp/out"))
+
+      exists(path("/tmp/out")).shouldBeTrue
+   }
+   "appendFile" should "add to what is already there" in mocked {
+      withFile(path("/tmp/log"), "first\n")
+      appendFile("second", path("/tmp/log"))
+
+      readFile(path("/tmp/log")) shouldBe "first\nsecond"
+   }
+   "readLines" should "split the arranged content into its lines" in mocked {
+      withFile(path("/tmp/three"), "a\nb\nc")
+
+      readLines(path("/tmp/three")).joined(",") shouldBe "a,b,c"
+   }
+   "readLines" should "answer nothing for an empty file" in mocked {
+      withFile(path("/tmp/empty"), "")
+
+      readLines(path("/tmp/empty")).size shouldBe 0
+   }
+   "foldLines" should "fold over the lines, front to back" in mocked {
+      withFile(path("/tmp/three"), "a\nb\nc")
+
+      foldLines("", acc -> line -> acc ++ line, path("/tmp/three")) shouldBe "abc"
+   }
+   "foldCodePoints" should "record the call and leave the accumulator, which is all it can honestly do" in mocked {
+      withFile(path("/tmp/three"), "abc")
+
+      foldCodePoints(7, acc -> _ -> acc + 1, path("/tmp/three")) shouldBe 7
+      wasCalled("foldCodePoints /tmp/three")
+   }
+   "exists" should "be true for an arranged file and false for anything else" in mocked {
+      withFile(path("/tmp/there"), "x")
+
+      exists(path("/tmp/there")).shouldBeTrue
+      exists(path("/tmp/elsewhere")).shouldBeFalse
+   }
+   "exists" should "be true for an arranged directory" in mocked {
+      withDirectory(path("/tmp/dir"))
+
+      exists(path("/tmp/dir")).shouldBeTrue
+   }
+   "isDirectory" should "tell a directory from a file" in mocked {
+      withDirectory(path("/tmp/dir"))
+      withFile(path("/tmp/file"), "x")
+
+      isDirectory(path("/tmp/dir")).shouldBeTrue
+      isDirectory(path("/tmp/file")).shouldBeFalse
+   }
+   "listDirectory" should "answer the immediate entries, and not what is deeper" in mocked {
+      withFile(path("/tmp/dir/one"), "1")
+      withFile(path("/tmp/dir/two"), "2")
+      withFile(path("/tmp/dir/nested/three"), "3")
+
+      listDirectory(path("/tmp/dir")).map(show).sorted.joined(",") shouldBe "/tmp/dir/one,/tmp/dir/two"
+   }
+   "walk" should "answer everything underneath, however deep" in mocked {
+      withFile(path("/tmp/dir/one"), "1")
+      withFile(path("/tmp/dir/nested/three"), "3")
+
+      walk(path("/tmp/dir")).map(show).sorted.joined(",") shouldBe "/tmp/dir/nested/three,/tmp/dir/one"
+   }
+   "createDirectories" should "make the directory exist" in mocked {
+      createDirectories(path("/tmp/made"))
+
+      isDirectory(path("/tmp/made")).shouldBeTrue
+   }
+   "delete" should "remove what was there" in mocked {
+      withFile(path("/tmp/doomed"), "x")
+      delete(path("/tmp/doomed"))
+
+      exists(path("/tmp/doomed")).shouldBeFalse
+   }
+   "the filesystem double" should "record every call it is asked, in order" in mocked {
+      exists(path("/a"))
+      writeFile("x", path("/b"))
+      delete(path("/b"))
+
+      calls shouldBe "exists /a; writeFile /b; delete /b"
+   }
+}

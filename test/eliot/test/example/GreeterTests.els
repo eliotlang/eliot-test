@@ -1,17 +1,18 @@
 import eliot.collection.List
 import eliot.test.Assertion
 import eliot.test.Test
+import eliot.test.Mock
 import eliot.test.example.Greeter
-import eliot.test.example.FakeConsole
 
 /**
- * **One suite, four kinds of test.** Pure unit tests that may perform nothing at all, run-then-assert tests over
- * effectful code, tests performing real effects inline, and direct-style tests interleaving *faked* effects with
- * assertions — registered side by side in one `testCases`, reported by the one runner, counted in the one summary.
+ * **One suite, three kinds of test.** Pure unit tests that may perform nothing at all, mocked tests that run
+ * effectful code against doubles and assert on what it did, and tests performing real effects inline —
+ * registered side by side in one `testCases`, reported by the one runner, counted in the one summary.
  *
- * They mix because `in` discharges only the assertion effect: what a body may do is decided by this suite's declared
- * row (which admits `{Console}`), by `pure` where a case opts out of effects entirely, and by the carrier an author's
- * own word names where a case wants a fake. No carrier is named here, and none is pinned.
+ * They mix because `in` discharges only the assertion effect: what a body may do is decided by this suite's
+ * declared row (which admits `{Console}`), by `pure` where a case opts out of effects entirely, and by
+ * `mocked` where a case wants doubles. **No carrier is named anywhere here, and no fixture is written** — the
+ * doubles are the framework's.
  */
 def testCases: {Writer[List[TestResult]], Console} Unit = {
    // --- 1. a pure unit test: the body may assert and nothing else --------------------------------------------------
@@ -23,57 +24,41 @@ def testCases: {Writer[List[TestResult]], Console} Unit = {
       greeting("Bob") shouldNotBe "Bob"
    }
 
-   // --- 2. run-then-assert over effectful code --------------------------------------------------------------------
-   // The fake run sits in its own definition below; what reaches the assertion is a plain `String`.
-   "greet" should "greet whoever the console offers" in pure {
-      greetTranscript shouldBe "Hello, Bob!\n"
+   // --- 2. mocked: arrange what the console answers, act, then assert on both the effect and the calls -------------
+   "greet" should "greet whoever the console offers" in mocked {
+      whenReading(singleton("Bob"))
+
+      greet
+
+      calls shouldBe "readLine; printLine Hello, Bob!"
    }
-   "greet" should "fall back to a stranger on no input" in pure {
-      silentGreetTranscript shouldBe "Hello, stranger!\n"
+   "greet" should "fall back to a stranger on no input" in mocked {
+      greet
+
+      wasCalled("printLine Hello, stranger!")
+   }
+   "farewell" should "say goodbye, then invite a return" in mocked {
+      farewell("Bob")
+
+      wereCalledInOrder(append(singleton("printLine Goodbye, Bob."), "printLine Come back soon!"))
+   }
+   "farewell" should "print exactly twice, and nothing else" in mocked {
+      farewell("Bob")
+
+      wasCalledTimes(2, "printLine")
+      onlyTheseWereCalled(singleton("printLine"))
    }
 
    // --- 3. real effects, written inline ----------------------------------------------------------------------------
    // The suite's row declares `{Console}`, so a body may perform it — on whatever carrier the runner was compiled to.
-   // Nothing here names a carrier, and the body needs no definition of its own.
    "real effects" should "be available to a body whose suite declares them" in {
       printLine(" | (this line was printed by a test performing a real Console effect)")
       success
    }
-
-   // --- 3b. `expect` over a body that performs -----------------------------------------------------------------
-   // `expect`'s body row is open, so it supplies one `Throw` layer over the suite's own carrier instead of pinning
-   // the body to `Id`. A body that prints *and* raises is therefore checkable, which a pinned body could never be.
    "expect" should "wrap a body that performs a real effect while it raises" in {
       expect(Failed("after printing"), {
          printLine(" | (printed by a body wrapped in `expect`)")
          fail("after printing")
       })
    }
-
-   // --- 4. direct-style over a faked carrier -----------------------------------------------------------------------
-   // The body performs the faked console and asserts *between* its steps. Same suite, same runner, same summary.
-   // The same, with `readLine` scripted: `onConsoleReading` is `onConsole` for a body that reads.
-   "greet" should "read its name from the console it is given" in onConsoleReading(singleton("Ann"), {
-      greet
-      transcript shouldBe "Hello, Ann!\n"
-   })
-
-   "farewell" should "say goodbye, then invite a return" in onConsole {
-      printLine("--")
-      transcript shouldBe "--\n"
-      farewell("Bob")
-      transcript shouldBe "--\nGoodbye, Bob.\nCome back soon!\n"
-   }
 }
-
-/**
- * The fake run for the first run-then-assert case. It must be a definition of its own: a region writes every
- * carrier-generic callee at *its* carrier, and the suite above is pinned to the `Writer` stack, so `greet` written
- * there would be written at that stack rather than at `Recorded`.
- */
-private def greetTranscript: String = transcriptOf(singleton("Bob"), greet)
-
-/**
- * The same, with nothing to read: `readLine` answers `None` and `greet`'s own `orElse` supplies the fallback.
- */
-private def silentGreetTranscript: String = transcriptOf(empty, greet)
