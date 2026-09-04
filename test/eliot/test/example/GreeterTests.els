@@ -52,12 +52,18 @@ def testCases: {Writer[List[TestResult]], Console} Unit = {
 
    // --- 4. direct-style over a faked carrier -----------------------------------------------------------------------
    // The body performs the faked console and asserts *between* its steps. Same suite, same runner, same summary.
-   "farewell" should "say goodbye, then invite a return" in onConsole(empty, {
+   // The same, with `readLine` scripted: `onConsoleReading` is `onConsole` for a body that reads.
+   "greet" should "read its name from the console it is given" in onConsoleReading(singleton("Ann"), {
+      greet
+      transcript shouldBe "Hello, Ann!\n"
+   })
+
+   "farewell" should "say goodbye, then invite a return" in onConsole {
       printLine("--")
       transcript shouldBe "--\n"
       farewell("Bob")
       transcript shouldBe "--\nGoodbye, Bob.\nCome back soon!\n"
-   })
+   }
 }
 
 /**

@@ -86,7 +86,12 @@ implement Transcript[Recorded] {
  * written inline at the `in` site, inside the suite's own region, instead of needing a definition with no ambient
  * carrier of its own.
  */
-def onConsole(input: List[String], body: {| Recorded} Unit): {Throw[AssertionError]} Unit =
+def onConsole(body: {| Recorded} Unit): {Throw[AssertionError]} Unit = onConsoleReading(empty, body)
+
+/**
+ * `onConsole` for a body that reads: `input` is what `readLine` will hand out, in order.
+ */
+def onConsoleReading(input: List[String], body: {| Recorded} Unit): {Throw[AssertionError]} Unit =
    orRaise(first(runRecorded(body)(Session(input, ""))))
 
 /**

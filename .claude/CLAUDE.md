@@ -50,7 +50,7 @@ three tiny modules plus a self-test:
   - the **suite's row** — the default; `in { printLine(…); … shouldBe … }` performs for real where the row says
     `{Console}`, written inline with no definition of its own;
   - **`in pure { … }`** — opts a case out of effects entirely, whatever the suite allows (see `pure` below);
-  - **an author's own word** — `in onConsole(input, { … })` runs the body on a fake carrier the test declares
+  - **an author's own word** — `in onConsole { … }` runs the body on a fake carrier the test declares
     (see "Testing effectful code").
 
 - `eliot.test.Assertion` — `data AssertionError = Failed | NotEqual | UnexpectedlyEqual | NoErrorRaised`, a sum
@@ -212,9 +212,11 @@ def onConsole(input: List[String], body: Recorded[Unit]): Outcome =   // the aut
 way a real failure stops a real test. The body then reads as an ordinary script:
 
 An author's discharge word answers the **assertion effect** (`{Throw[AssertionError]} Unit`), exactly as `pure` does,
-so `in` cannot tell the two apart and the case reads as one word — `"…" should "…" in onConsole(empty, { … })`. It
-runs the body down to an `Outcome` and reflects that back with `orRaise`. The three ways to give a case a body
-therefore read alike: inline on the suite's row, `pure { … }`, and the author's own word:
+so `in` cannot tell the two apart. Give it a single parameter and the case reads as a bare word with a block, the
+same shape as `pure`: `"…" should "…" in onConsole { … }`. It runs the body down to an `Outcome` and reflects that
+back with `orRaise`. `onConsoleReading(input, { … })` is the same word for a body that reads, with `readLine`'s
+lines scripted. So all three ways to give a case a body read alike — inline on the suite's row, `pure { … }`, and
+the author's own word:
 
 ```eliot
 private def farewellOutcome: Outcome = onConsole(empty, farewellScript)
