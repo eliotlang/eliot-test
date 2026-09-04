@@ -52,11 +52,11 @@ Four facts, each established by compiling it. They are stated first because thre
    framework-side instance. This matters twice over: a project could not have written that instance itself
    (fact 2), and it means assertions ride the mock carrier for free, since `AssertionError` is just another
    `E`. Interleaved assert-during-a-mocked-run comes out of the same instance with no extra machinery.
-4. **A mocked run is written inline**, because a slot declared with the capture tag `{| Mock} A` hosts the
-   computation (W3, shipped 2026-09-04) — either as the argument of a helper inside a `pure` body, or as the
-   whole body of a discharge word standing where `pure` stands. No definition per scenario, and the suite's
-   row stays `{Writer[List[TestResult]]}`. Verified together with fact 3: a spike case asserts a value, then
-   `calls`, then acts again, then `calls` again, all inside one mocked body.
+4. **A whole mocked scenario is written inline in one block**, because a slot declared with the capture tag
+   `{| Mock} Unit` hosts the computation (W3, shipped 2026-09-04), and a discharge word taking only that
+   block stands exactly where `pure` stands. No definition per scenario, and the suite's row stays
+   `{Writer[List[TestResult]]}`. Verified with fact 3 in one spike case: arrange, act, assert the value,
+   assert the calls, act again, assert again — all in a single `in mocked { … }` body.
 
 Read together: **mocking cannot be done well by a project, so it has to be done once by the framework.**
 
@@ -70,7 +70,9 @@ eliot.test.Mock      data Mock[A](runMock: World => Pair[Either[Failure, A], Wor
                      implement Effect[Mock]
                      implement[E ~ Show] Throw[E, Mock]          -- every failure channel, incl. assertions
                      implement Console[Mock] Process[Mock] FileSystem[Mock] Environment[Mock] Log[Mock]
-eliot.test.Mocked    the discharge words a case uses: mocked / answerOf / callsOf
+eliot.test.Mock      ability Mocking[F[_]] / ability Calls[F[_]]  -- arranging and verifying, as effects
+                     the typed arranging words: whenSpawning, whenReading, withFile, withVariable, …
+eliot.test.Mocked    the one discharge word a case uses: mocked { … }, plus raising for expected failures
 ```
 
 The split is forced: `Mock` names `eliot.file.File` (for `FileSystem` and `Path`) and `Mocked` names
@@ -90,9 +92,9 @@ base-layer code and the framework still names no platform.
 
 ### 3.2 What a test writes
 
-**`mocked(world, { … })` is the shape to lead with**: it *runs* the code under test on the mock carrier
-against `world`, once, and the body then asserts on whatever it likes — the value that came back, and the
-calls that were made, in the same run.
+**One word, and then ordinary code.** `in mocked { … }` reads exactly like `in pure { … }` — a bare word and
+a block — and inside it a test *arranges*, *acts* and *asserts* in that order, the way a JUnit test with
+Mockito does:
 
 ```eliot
 import eliot.test.Assertion
@@ -101,47 +103,66 @@ import eliot.test.Mocked
 import eliot.build.Cache
 
 def testCases: {Writer[List[TestResult]]} Unit = {
-   "publishedTags" should "clone a mirror it has not seen, then read what it published" in mocked(
-      spawning("ls-remote", listing), {
-         val published = publishedTags(cacheRoot, cached)
+   "publishedTags" should "clone a mirror it has not seen, then read what it published" in mocked {
+      whenSpawning("ls-remote", exiting(0, listing))          -- arrange
 
-         published.size shouldBe 2
-         calls shouldBe expectedFirstVisit
-         publishedTags(cacheRoot, cached)
-         calls shouldBe (expectedFirstVisit ++ "; " ++ expectedListing)
-      })
+      val published = publishedTags(cacheRoot, cached)        -- act
+
+      published.size shouldBe 2                               -- assert on the answer
+      calls shouldBe expectedFirstVisit                       -- ...and on the interaction
+   }
 }
 ```
 
-That is act-then-assert, the way a JUnit test with a mock reads, and it is worth being the default for two
-reasons beyond familiarity. Assertions are made **on the values themselves** — `published.size shouldBe 2`,
-not `renderedTags(…) shouldBe "v1.2 aaa1, v1.3 bbb2"` — so the rendering helpers every fixture grows today
-(`renderedTags`, `renderedText`) stop existing; the body is inside the carrier, so `shouldBe` works on any
-`Eq & Show` as usual, and it works because of fact 3. And the run happens **once**, so a case that checks
-both the answer and the interaction does not run the code twice.
+Nothing is built outside the body and nothing is passed in. That is possible because **arranging is itself
+an effect on the mock carrier**, exactly as reading the journal is:
 
-`callsOf(world, computation)` and `answerOf(world, rendering, computation)` remain as conveniences for the
-one-line cases — `callsOf` answers what a run *did*, `answerOf` what it *yielded or raised*, both by running
-the computation on the mock exactly as `mocked` does. They are deterministic and pure, so a case that uses
-both simply runs twice; harmless, but a reason not to lead with them.
+```eliot
+ability Mocking[F[_]] { def scripted(call: Call, answer: Answer): {Mocking} Unit }
+ability Calls[F[_]]   { def calls: {Calls} String }
+```
 
-For an expected failure, the mock side needs its own word — call it `raising(error, world, { … })`. The
-framework's `expect` cannot serve here: it supplies a `Throw[E]` layer, which stacks a `ThrowCarrier` over
-the mock carrier, and a mock instance is monomorphic and earns no lift through it (the standing
-do-not-stack-over-a-fake rule).
+with one `implement … [Mock]` apiece in the framework, and a **typed arranging word per base effect**
+written over that one primitive — ordinary carrier-generic functions, needing no further instance:
 
-### 3.3 The scripting vocabulary
+| Arranging | Answers |
+|---|---|
+| `whenSpawning(fragment, exiting(0, output))` / `whenSpawning(fragment, failing(128, diagnostics))` | `Process.run` |
+| `whenReading(lines)` | `Console.readLine` |
+| `withFile(path, content)`, `withDirectory(path)` | `FileSystem.readFile`, `exists`, `isDirectory` |
+| `withVariable(name, value)` | `Environment` |
 
-One builder set on `World`, generalising `FakeWorld`'s: `spawning(fragment, output)` /
-`spawnFailing(fragment, code, diagnostics)` for `Process`; `withDirectory(path)` / `withFile(path, content)`
-for `FileSystem`; `reading(lines)` for `Console`'s input; `withVariable(name, value)` for `Environment`.
-Everything else answers a documented default and is recorded, so an unscripted call is visible in `calls`
-rather than silently plausible.
+Three consequences worth having, all of them free once arranging is an effect:
 
-**Decision to take before building §3.3**: whether an unscripted call answers a default (lenient, what
-`FakeWorld` does today) or fails the case (strict). Recommendation: **lenient plus a `strictly(world)`
-switch** — the journal assertion already catches a surprise call, and lenience is what keeps a
-twelve-method ability from forcing twelve lines of script per test.
+- **A shared arrangement is an ordinary definition** — `private def mirrored: {Mocking} Unit = withDirectory(…)`
+  — called at the top of a body. That is the `@Before` of this framework, with no annotation and no
+  framework concept behind it.
+- **A mock can be re-armed mid-test**: a later `whenSpawning` for the same fragment overrides an earlier
+  one, so a body can act, re-arm, and act again. **Last arrangement wins** — a decision, not an accident:
+  the spike had it first-wins and the re-arming case failed until the script was prepended.
+- **Assertions are made on the values themselves.** `published.size shouldBe 2`, not
+  `renderedTags(…) shouldBe "v1.2 aaa1, v1.3 bbb2"`, because the body runs *inside* the carrier and
+  `shouldBe` works on any `Eq & Show` there (fact 3). Every rendering helper a fixture grows today
+  (`renderedTags`, `renderedText`) stops existing.
+
+There is no second discharge word and no `world` parameter anywhere. An earlier draft of this plan had
+`mocked(world, body)` plus `callsOf(world, computation)` and `answerOf(world, rendering, computation)`; all
+three are dropped. A one-line case is just a short body, and a case that checks both the answer and the
+interaction runs the code **once** rather than once per helper.
+
+For an expected failure the mock side needs its own word — `raising(report, { … })`, matching what a raise
+reported. `expect` cannot serve: it supplies a `Throw[E]` layer, which stacks a `ThrowCarrier` over the mock
+carrier, and a mock instance is monomorphic and earns no lift through it (the standing
+do-not-stack-over-a-fake rule). `raising` lives with `Mock`, runs the block against the current recording
+and folds its outcome, so it composes with everything above.
+
+### 3.3 The one behaviour to decide before building
+
+Whether an **unscripted** call answers a default (lenient — what every fixture does today) or fails the case
+(strict). Recommendation: **lenient, with a `strictly` switch later**. Each base method has an honest
+"nothing happened" answer — no such file, no input, exit 0 with no output — and the `calls` assertion already
+catches a surprise call, while strictness would force a line of arrangement per method on a twelve-method
+ability before a test could say anything.
 
 ## 4. What a project still writes, and why
 
@@ -181,9 +202,9 @@ Each stage is green on its own and each deletes more than it adds.
   scripting. Migrate `eliot-build`: `FakeWorld.els` (195 lines) is deleted, `CacheTests`/`GitTests` keep
   their cases and their assertions, `TablePackages` stays (§4). Success criterion: 146 cases still green,
   and the diff is almost entirely deletion.
-- **Stage 3 — interaction assertions.** `calls` as an ability on the mock carrier (mid-run), plus the small
-  vocabulary a mock wants: "never spawned", "spawned exactly once", call ordering. Only now, because §2's
-  fact 3 makes the plumbing free and stage 2's migration says which assertions are actually wanted.
+- **Stage 3 — interaction assertions.** Beyond `calls shouldBe …`: "never spawned", "spawned exactly once",
+  call ordering, and `raising`. Only now, because stage 2's migration is what says which of these the real
+  suites actually want.
 - **Stage 4 — the user-ability shape.** Document the narrow-carrier recipe with the framework's machinery,
   and open the language question of fact 1 with the compiler.
 
