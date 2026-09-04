@@ -52,9 +52,11 @@ Four facts, each established by compiling it. They are stated first because thre
    framework-side instance. This matters twice over: a project could not have written that instance itself
    (fact 2), and it means assertions ride the mock carrier for free, since `AssertionError` is just another
    `E`. Interleaved assert-during-a-mocked-run comes out of the same instance with no extra machinery.
-4. **A mocked run is written inline in an ordinary `pure` body**, because a slot declared with the capture
-   tag `{| Mock} A` hosts the computation (W3, shipped 2026-09-04). No definition per scenario, and the
-   suite's row stays `{Writer[List[TestResult]]}`.
+4. **A mocked run is written inline**, because a slot declared with the capture tag `{| Mock} A` hosts the
+   computation (W3, shipped 2026-09-04) — either as the argument of a helper inside a `pure` body, or as the
+   whole body of a discharge word standing where `pure` stands. No definition per scenario, and the suite's
+   row stays `{Writer[List[TestResult]]}`. Verified together with fact 3: a spike case asserts a value, then
+   `calls`, then acts again, then `calls` again, all inside one mocked body.
 
 Read together: **mocking cannot be done well by a project, so it has to be done once by the framework.**
 
@@ -71,16 +73,26 @@ eliot.test.Mock      data Mock[A](runMock: World => Pair[Either[Failure, A], Wor
 eliot.test.Mocked    the discharge words a case uses: mocked / answerOf / callsOf
 ```
 
-The split is deliberate: `Mock` names `eliot.file.File` (for `FileSystem` and `Path`) and `Mocked` names
+The split is forced: `Mock` names `eliot.file.File` (for `FileSystem` and `Path`) and `Mocked` names
 `eliot.test.Assertion`, and **no file may import both** — they each export a `message`
-(`eliot-build/docs/effectful-modules.md` §9.5). Keeping the discharge words in their own module dissolves
-that collision instead of waiting on a rename. The generic `Throw` instance never names `AssertionError`,
-so it stays on the `Mock` side.
+(`eliot-build/docs/effectful-modules.md` §9.5). The generic `Throw` instance never names `AssertionError`
+(`E` is a binder), so it stays on the `Mock` side.
+
+**The split alone is not enough, which is why §5 opens with a rename.** The carrier's failure slot has a
+type, and if that type is `AssertionError` then `Mock` must import `eliot.test.Assertion` and the collision
+is back. Carrying the failure as *rendered text* instead compiles — the spike does exactly that — but the
+runner then reports a failed mocked case as one line, `Failed(NotEqual(two, one))`, instead of the
+expected/actual lines it renders for every other case. Losing the failure report in precisely the tests
+this plan exists to make easy is not an acceptable trade, so the rename is stage 0 rather than a wish.
 
 Everything here is platform-independent: the base effect abilities are abstract, so the mocks are ordinary
 base-layer code and the framework still names no platform.
 
 ### 3.2 What a test writes
+
+**`mocked(world, { … })` is the shape to lead with**: it *runs* the code under test on the mock carrier
+against `world`, once, and the body then asserts on whatever it likes — the value that came back, and the
+calls that were made, in the same run.
 
 ```eliot
 import eliot.test.Assertion
@@ -89,25 +101,34 @@ import eliot.test.Mocked
 import eliot.build.Cache
 
 def testCases: {Writer[List[TestResult]]} Unit = {
-   "publishedTags" should "clone a mirror this build has never seen, then list what it publishes" in pure {
-      callsOf(spawning("ls-remote", listing), publishedTags(cacheRoot, cached)) shouldBe expectedFirstVisit
-   }
-   "publishedTags" should "raise what git said when git said no" in pure {
-      answerOf(spawnFailing("ls-remote", 128, "no such repository"), renderedTags, publishedTags(cacheRoot, cached))
-         shouldBe expectedRefusal
-   }
-   "the cache" should "clone once and read the mirror it made" in mocked(spawning("ls-remote", listing), {
-      publishedTags(cacheRoot, cached)
-      calls shouldBe expectedFirstVisit
-      descriptorTextAt(cacheRoot, version, cached)
-      calls shouldBe expectedFirstVisitThenShow
-   })
+   "publishedTags" should "clone a mirror it has not seen, then read what it published" in mocked(
+      spawning("ls-remote", listing), {
+         val published = publishedTags(cacheRoot, cached)
+
+         published.size shouldBe 2
+         calls shouldBe expectedFirstVisit
+         publishedTags(cacheRoot, cached)
+         calls shouldBe (expectedFirstVisit ++ "; " ++ expectedListing)
+      })
 }
 ```
 
-No carrier, no instance, no effect named — a script and assertions. The three shapes are the three that
-already exist: `callsOf` for what a run *did*, `answerOf` for what it *yielded or raised*, and `mocked` for a
-script that asserts as it goes (fact 3 is what makes the third one free).
+That is act-then-assert, the way a JUnit test with a mock reads, and it is worth being the default for two
+reasons beyond familiarity. Assertions are made **on the values themselves** — `published.size shouldBe 2`,
+not `renderedTags(…) shouldBe "v1.2 aaa1, v1.3 bbb2"` — so the rendering helpers every fixture grows today
+(`renderedTags`, `renderedText`) stop existing; the body is inside the carrier, so `shouldBe` works on any
+`Eq & Show` as usual, and it works because of fact 3. And the run happens **once**, so a case that checks
+both the answer and the interaction does not run the code twice.
+
+`callsOf(world, computation)` and `answerOf(world, rendering, computation)` remain as conveniences for the
+one-line cases — `callsOf` answers what a run *did*, `answerOf` what it *yielded or raised*, both by running
+the computation on the mock exactly as `mocked` does. They are deterministic and pure, so a case that uses
+both simply runs twice; harmless, but a reason not to lead with them.
+
+For an expected failure, the mock side needs its own word — call it `raising(error, world, { … })`. The
+framework's `expect` cannot serve here: it supplies a `Throw[E]` layer, which stacks a `ThrowCarrier` over
+the mock carrier, and a mock instance is monomorphic and earns no lift through it (the standing
+do-not-stack-over-a-fake rule).
 
 ### 3.3 The scripting vocabulary
 
@@ -146,10 +167,16 @@ two constraint sets provably disjoint?) and belongs in the compiler's own plan, 
 
 Each stage is green on its own and each deletes more than it adds.
 
+- **Stage 0 — rename one of the two `message`s.** `eliot.file.File`'s `message(e: IoError)` or this
+  framework's infix `message`; the second has the smaller blast radius (test code only, and `describedAs`
+  reads better anyway). Without it the mock carrier cannot hold an `AssertionError`, and every failure in a
+  mocked case degrades to one rendered line. One rename, then §3.1's split is a tidiness choice rather than
+  a workaround.
 - **Stage 1 — the carrier and one effect.** `World`, `Mock`, `Effect[Mock]`, the generic `Throw[E, Mock]`,
   `implement Console[Mock]`, and the three discharge words. Dogfood by rewriting this repository's own
   `test/eliot/test/example/` on it: `FakeConsole.els` (~100 lines) disappears, `GreeterTests` keeps every
-  case. Success criterion: the four styles of `GreeterTests` still read the same, minus the fixture.
+  case. Success criterion: the four styles of `GreeterTests` still read the same, minus the fixture — and a
+  failed assertion inside a `mocked` body reports expected/actual like any other.
 - **Stage 2 — the rest of the base effects.** `Process`, `FileSystem`, `Environment`, `Log` mocks and their
   scripting. Migrate `eliot-build`: `FakeWorld.els` (195 lines) is deleted, `CacheTests`/`GitTests` keep
   their cases and their assertions, `TablePackages` stays (§4). Success criterion: 146 cases still green,
