@@ -50,7 +50,7 @@ three tiny modules plus a self-test:
   - the **suite's row** — the default; `in { printLine(…); … shouldBe … }` performs for real where the row says
     `{Console}`, written inline with no definition of its own;
   - **`in pure { … }`** — opts a case out of effects entirely, whatever the suite allows (see `pure` below);
-  - **an author's own word** — `in verdict(onConsole(input, script))` runs the body on a fake carrier the test declares
+  - **an author's own word** — `in onConsole(input, { … })` runs the body on a fake carrier the test declares
     (see "Testing effectful code").
 
 - `eliot.test.Assertion` — `data AssertionError = Failed | NotEqual | UnexpectedlyEqual | NoErrorRaised`, a sum
@@ -211,10 +211,10 @@ def onConsole(input: List[String], body: Recorded[Unit]): Outcome =   // the aut
 `Effect[Recorded]`'s `flatMap` short-circuits on a `Left`, so a failed assertion stops the rest of the body the
 way a real failure stops a real test. The body then reads as an ordinary script:
 
-A discharge word answering a plain `Outcome` is registered with **`verdict`** (in `eliot.test.Test`), which reflects
-the verdict back into the assertion effect `in` discharges — `"…" should "…" in verdict(farewellOutcome)`. It is the
-counterpart of `pure` for a case the author discharges themselves, so the three ways to give a case a body read
-alike: inline on the suite's row, `pure { … }`, and `verdict(…)`:
+An author's discharge word answers the **assertion effect** (`{Throw[AssertionError]} Unit`), exactly as `pure` does,
+so `in` cannot tell the two apart and the case reads as one word — `"…" should "…" in onConsole(empty, { … })`. It
+runs the body down to an `Outcome` and reflects that back with `orRaise`. The three ways to give a case a body
+therefore read alike: inline on the suite's row, `pure { … }`, and the author's own word:
 
 ```eliot
 private def farewellOutcome: Outcome = onConsole(empty, farewellScript)
@@ -271,10 +271,6 @@ instance per (ability × carrier layer), so reach for it only when the no-stacki
   denote the same carrier rather than one above it. `expect` **is** un-pinned (its `E` is its own binder, a
   distinct entry), so it wraps bodies that perform; `message` still cannot. Neither can wrap an assertion that
   reads a fake, for the stacking reason above.
-- **A mock word cannot both fix a foreign carrier in a slot and declare a row on its return.** Giving
-  `onConsole` a `{Throw[AssertionError]} Unit` return — so it could stand directly after `in` — stops the
-  elaborator capturing at `Recorded` and the body is expected at the suite's stack instead. Keep the word
-  answering a plain `Outcome` and register it with `verdict(…)`.
 - **`import eliot.collection.List` shadows `Effect`'s `map`/`flatMap` in the same file, silently.** Both are
   explicit imports and `List` wins, so carrier code in that file resolves to the list combinator and dies with a
   message pointing nowhere near the cause — `No ability implementation found for ability 'X' with type arguments

@@ -44,13 +44,3 @@ def in[G[_] ~ Writer[List[TestResult]] & Effect](testCase: TestCase, body: {Thro
 
    tell(singleton(TestResult(testCase, outcome)))
 }
-
-/**
- * Register an already-computed verdict as this case's body: `"…" should "…" in verdict(farewellOutcome)`.
- *
- * The counterpart of `pure` for a case discharged by the test author's *own* word — a fake-carrier run answers an
- * `Outcome` as plain data, and this is what stands it where a body stands, so `in` cannot tell the two apart. It is a
- * framework word rather than a bare `orRaise` so that the three ways to give a case a body read alike: the suite's own
- * row inline, `pure { … }`, and `verdict(…)`.
- */
-def verdict(outcome: Outcome): {Throw[AssertionError]} Unit = orRaise(outcome)
