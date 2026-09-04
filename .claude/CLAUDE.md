@@ -50,8 +50,10 @@ three tiny modules plus a self-test:
   - the **suite's row** — the default; `in { printLine(…); … shouldBe … }` performs for real where the row says
     `{Console}`, written inline with no definition of its own;
   - **`in pure { … }`** — opts a case out of effects entirely, whatever the suite allows (see `pure` below);
-  - **an author's own word** — `in onConsole { … }` runs the body on a fake carrier the test declares
-    (see "Testing effectful code").
+  - **`in mocked { … }`** — runs the case against `eliot.test.Mock`'s doubles for the base effects, with no
+    fixture of any kind (see "Mocking");
+  - **an author's own word** — `in onConsole { … }` runs the body on a carrier the test declares, which is
+    what a project's *own* ability still needs (see "Testing effectful code").
 
 - `eliot.test.Assertion` — `data AssertionError = Failed | NotEqual | UnexpectedlyEqual | NoErrorRaised`, a sum
   of *failure shapes* carrying the already-rendered values (assertions `show` at the raise site, where the
@@ -66,6 +68,10 @@ three tiny modules plus a self-test:
   (`infix left below shouldBe` — rewrites a failing body's message). `expect`'s body row is **open**
   (`{Throw[E]} Unit`), so it supplies one `Throw` layer over whatever carrier the case runs on and can wrap a body
   that performs — a body that prints *and* raises is checkable. `message` cannot follow; see "What does not work".
+
+  It also holds `shouldBeTrue`/`shouldBeFalse` (`Bool` has no `Show`, so `shouldBe true` does not compile)
+  and the infix `body describedAs newMessage` — named that, not `message`, because `eliot.file.File` exports a
+  `message` too and no file may import both.
 
   It also holds **`pure`** — `def pure(body: {Throw[AssertionError] | Id} Unit): {Throw[AssertionError]} Unit` —
   the word that **forces a case to be pure**. The pin to `Id` is its whole meaning: `Id` has no `Suspend`, so a body
@@ -135,6 +141,30 @@ reproducible. (One `testCases` per module — the reflection gathers one value p
 > run while the build reported success — tests that do not run look exactly like tests that pass. It has not
 > reproduced since; if a suite you just wrote does not appear in the report, `rm target/.eliot-*` and rebuild
 > before looking anywhere else.
+
+- `eliot.test.Mock` — **the doubles, and the vocabulary a test writes.** One carrier (`Mock`), one
+  `Effect` instance, one generic `implement[E ~ Show] Throw[E, Mock]` that serves *every* failure channel
+  including a project's own error types and `AssertionError` itself, and a concrete double for every base
+  effect ability: `Console`, `Process`, `FileSystem`, `Environment`, `Log`. A test writes **no fixture** —
+  it arranges, acts and asserts in one `in mocked { … }` block.
+
+  Arranging is an effect (`ability Mocking`), which is why `mocked` takes only a block: `whenSpawning`
+  (with `succeeding`/`failing`/`exiting`), `whenSpawningCreates`, `whenReading`, `withFile`,
+  `withDirectory`, `withVariable`, `withArguments`, `withWorkingDirectory`. **The most recent arrangement
+  wins**, so a body may act, re-arm and act again, and a shared arrangement is an ordinary `{Mocking} Unit`
+  definition — this framework's `@Before`, with no annotation behind it.
+
+  Verifying is an effect too (`ability Calls`): `calls`, `callsMatching`, `lastCall`, `callCount`,
+  `wasCalled`, `wasNeverCalled`, `wasCalledOnce`, `wasCalledTimes`, `wasCalledAtLeast`, `wasCalledAtMost`,
+  `wereCalledInOrder`, `nothingWasCalled`, `onlyTheseWereCalled`, `forgetCalls`. Matching is by
+  **containment** of the recorded line. `raising(report, { … })` expects a failure — `expect` cannot, since
+  it stacks a `ThrowCarrier` over the carrier and a double earns no lift through it.
+
+  **Why the framework owns this and a project cannot**: an instance must live with its ability or with a
+  type argument, and an ability may have at most one carrier-generic instance — so a double is necessarily
+  concrete and necessarily colocated with the carrier. `docs/mocking.md` has the measurements. What a
+  project still writes is a carrier for *its own* abilities, which is what `eliot-build`'s `TablePackages`
+  is.
 
 ## Testing effectful code
 

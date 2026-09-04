@@ -1,8 +1,9 @@
 # Mocking Belongs to the Framework: a Plan
 
-Status: **PLAN**, 2026-09-04. Nothing here is built. The four language facts in §2 were measured against
-compiler `3be06cc` with a throwaway spike, not reasoned from documentation, and they are what decides the
-design — the rest follows from them.
+Status: **BUILT**, 2026-09-04, as `eliot.test.Mock`. 96 cases cover it here and `eliot-build` migrated onto
+it (146 green, its 195-line fixture deleted). §6 records what the plan got wrong, each item found by
+compiling it. The four language facts in §2 were measured the same way, and they are what decided the
+design.
 
 ## 1. The problem, from the user's side
 
@@ -208,7 +209,34 @@ Each stage is green on its own and each deletes more than it adds.
 - **Stage 4 — the user-ability shape.** Document the narrow-carrier recipe with the framework's machinery,
   and open the language question of fact 1 with the compiler.
 
-## 6. Non-goals
+## 6. What was built, and where the plan was wrong
+
+The shape held: one framework-owned carrier, concrete doubles for every base effect, one generic `Throw`,
+arranging as an effect, `mocked { … }` as the only discharge word. Five things were different in practice.
+
+- **One module, not two.** The split existed only to keep `eliot.file.File` and `eliot.test.Assertion`
+  apart. Doing stage 0 — renaming this framework's infix `message` to `describedAs` — removes the reason, so
+  a test imports one module and gets everything.
+- **`calls` answers text, not a list.** The standard library has no `Eq`/`Show` for `List`, so a list could
+  not be compared by an assertion at all. For the same reason `shouldBeTrue`/`shouldBeFalse` are new words:
+  `Bool` has no `Show` either, and a predicate is the thing a test asserts on most after a value.
+- **`raising` is a `Mocking` ability method whose body slot is a suspended `{} Unit`.** A carrier-headed
+  slot — `Mock[A]`, or the capture tag — *double-wraps* when it is written inside the mocked region
+  (`Expected: Mock[Mock[Unit]]`). The capture tag is for slots written where there is no carrier yet;
+  `fold`'s arms and `catch`'s handler are the right shape for one written inside.
+- **A `{}`-rowed combinator may not be called inside an instance method** and handed to `Right`: `map` and
+  `foldLeft` there are computations on the mock's own carrier. Two of the `FileSystem` doubles fold in
+  carrier-free helpers instead.
+- **`whenSpawningCreates` was missing from the plan.** A spawned program that leaves a directory behind is
+  what "clone on the first visit, not on the second" is *about*, and without it the second half of that
+  scenario is seeded by the test rather than observed. It is this framework's `thenAnswer`, kept to the one
+  side effect a spawned program has that later code looks at.
+
+Two things the plan said are confirmed by the migration rather than only argued: a project still declares its
+own carrier for its *own* abilities (`eliot-build`'s `TablePackages`), and it must, because the production
+catch-all instance would otherwise collide with the framework's wide `Mock`.
+
+## 7. Non-goals
 
 - **Integration tests are not this.** A test that really spawns a process is not a unit test; it names the
   platform's run boundary deliberately (`eliot-build/test/eliot/build/RealWorldTests.els`) and it is the
