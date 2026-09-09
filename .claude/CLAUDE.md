@@ -13,25 +13,30 @@ reference. Eliot is total-by-default (no recursion/loops in user code), effects 
 direct style, types are values, and there is one `Int` whose range is compiler-tracked
 meta-information.
 
+> **Effects v6 (2026-09-09).** There is **no carrier** in Eliot any more, and none in this framework.
+> An effect is an ability declared with the `effect` keyword; an **implementation is a name** bound by
+> `with` and forwarded lexically from `main` inward; a computation in a slot is a thunk whose operations
+> were bound where it was written. Nothing here declares a carrier generic, and the words `Id`, `Suspend`,
+> `Effect[…]` and "fake carrier" no longer mean anything. The compiler's `docs/effects.md` Part I is the
+> authority.
+
 ## Architecture
 
 A file is a module: `src/eliot/test/Test.els` is module `eliot.test.Test`. The whole framework is
-three tiny modules plus a self-test:
+three tiny modules plus the mocking library and a self-test:
 
 - `eliot.test.Test` — the DSL, and **plain data throughout**. A **test case** is `data TestCase(subject:
   String, shouldPhrase: String)`: what it is about and what it should do, with *no body*. What running a
   body answered is `type Outcome = Either[AssertionError, Unit]`, and the two together are `data
-  TestResult(testCase: TestCase, outcome: Outcome)`. **Nothing here stores a computation, so nothing here
-  pins a carrier** — the framework holds verdicts, not suspended work.
+  TestResult(testCase: TestCase, outcome: Outcome)`. **Nothing here stores a computation**, so the
+  framework holds verdicts, not suspended work.
 
   A **suite** is a `Writer` computation that *accumulates* a `List[TestResult]` log, and it declares its own
   effect row: `{Writer[List[TestResult]]} Unit` for a suite whose tests perform nothing, `{Writer[List[TestResult]],
   Console} Unit` for one whose tests may print. It is a `Writer`, not `State`, because a suite only ever *appends*
   cases and never reads back what has been registered — the honest, minimal contract for a collector (`Writer` =
-  append-only `State`; the log's monoid is `Combine[List]` = concatenation). **The row is open, so no carrier is
-  named and none is pinned**: the carrier is whatever the `Runner` is compiled to, which is what lets a test perform
-  real effects without the framework knowing any platform. There is no `Test` alias — an alias may not carry an open
-  row — and the row is the suite's own statement of what its tests are allowed to do.
+  append-only `State`; the log's monoid is `Combine[List]` = concatenation). The row is the suite's own statement
+  of what its tests are allowed to do.
 
   Two infix combinators build a suite in direct style:
   - `"what" should "acceptance"` → a `TestCase` (`infix none def should`). Naming a case is its own record, so
@@ -40,20 +45,26 @@ three tiny modules plus a self-test:
     block of `in` statements *sequences*: each `tell` contributes a singleton `[TestResult]`, the blocks' logs join
     via `Combine[List]`, so the suite collects **every** case in declaration order.
 
-  **`in` discharges the assertion effect and nothing else.** Its body slot is
-  `{Throw[AssertionError] | G} Unit` over the suite's own carrier `G`, so `Throw[AssertionError]` is consumed per
-  case — a failing assertion stops that case and no other — while every other effect the body performs rides `G` and
-  is therefore governed by the suite's declared row. The body is a *slot*, not stored data, so it is written where it
-  stands: no test is ever collected unrun, and nothing here holds a suspended computation.
+  **`in` supplies the assertion effect and nothing else**, and it is one line:
+
+  ```eliot
+  def in(testCase: TestCase, body: {Throw[AssertionError]} Unit): {Writer[List[TestResult]]} Unit =
+     tell(singleton(TestResult(testCase, runThrow(body))))
+  ```
+
+  `{Throw[AssertionError]}` on the slot is the one entry `in` *supplies*, so it is discharged per case — a
+  failing assertion stops that case and no other. Every other operation the body performs is bound where it is
+  written: by the suite's own declarations, or by a `with` the body itself carries. So what a test may do is
+  decided by the suite's row and by nothing in `in`. The body is a *slot*, not stored data, so no test is ever
+  collected unrun.
 
   Three things then decide what a case may do, and they compose freely in one suite:
   - the **suite's row** — the default; `in { printLine(…); … shouldBe … }` performs for real where the row says
     `{Console}`, written inline with no definition of its own;
-  - **`in pure { … }`** — opts a case out of effects entirely, whatever the suite allows (see `pure` below);
   - **`in mocked { … }`** — runs the case against `eliot.test.Mock`'s doubles for the base effects, with no
     fixture of any kind (see "Mocking");
-  - **an author's own word** — `in onConsole { … }` runs the body on a carrier the test declares, which is
-    what a project's *own* ability still needs (see "Testing effectful code").
+  - **an author's own word** — `in onTerminal { … }` runs the body with the author's own named implementation
+    bound, which is what a project's *own* effect needs (see "Testing effectful code").
 
 - `eliot.test.Assertion` — `data AssertionError = Failed | NotEqual | UnexpectedlyEqual | NoErrorRaised`, a sum
   of *failure shapes* carrying the already-rendered values (assertions `show` at the raise site, where the
@@ -64,23 +75,19 @@ three tiny modules plus a self-test:
   returns `unit`. This is why a body carries `{Throw[AssertionError]}`. Provides `success` (never raises),
   `fail(reason)`, the infix `actual shouldBe expected` and `actual shouldNotBe unexpected` (over any `Eq &
   Show`, raising `NotEqual` / `UnexpectedlyEqual`), `expect(error, body)` (passes iff `body` raises exactly
-  `error`; discharges the body with `runThrow` and folds the `Either`), and the infix `body message newMessage`
-  (`infix left below shouldBe` — rewrites a failing body's message). `expect`'s body row is **open**
-  (`{Throw[E]} Unit`), so it supplies one `Throw` layer over whatever carrier the case runs on and can wrap a body
-  that performs — a body that prints *and* raises is checkable. `message` cannot follow; see "What does not work".
+  `error`), and the infix `body describedAs newMessage` (`infix left below shouldBe` — rewrites a failing
+  body's message).
 
   It also holds `shouldBeTrue`/`shouldBeFalse` (`Bool` has no `Show`, so `shouldBe true` does not compile)
-  and the infix `body describedAs newMessage` — named that, not `message`, because `eliot.file.File` exports a
-  `message` too and no file may import both.
+  and `describedAs` is named that, not `message`, because `eliot.file.File` exports a `message` too and no
+  file may import both.
 
-  It also holds **`pure`** — `def pure(body: {Throw[AssertionError] | Id} Unit): {Throw[AssertionError]} Unit` —
-  the word that **forces a case to be pure**. The pin to `Id` is its whole meaning: `Id` has no `Suspend`, so a body
-  handed to `pure` can perform nothing, and a `printLine` inside one is a compile error ("The effect 'Console' cannot
-  run here, because the computation it runs in is pure…") *even when the enclosing suite declares `{Console}`*. It
-  runs the body down to a verdict and reflects that verdict back into the assertion effect with `orRaise`, so `pure`
-  stands exactly where an effectful body stands and `in` cannot tell them apart. The actual discharge is
-  `outcomeOf(body) = runId(runThrow(body))` — the one place in the framework that names a carrier, and what `expect`
-  and `message` are built from too, which is why `runThrow` appears exactly once here.
+  **`expect` and `describedAs` compose with any case.** `expect`'s body row *supplies* `Throw[E]`, saying
+  nothing about anything else, so it wraps a body that performs a real effect, one running against doubles, or
+  one that performs nothing. `describedAs` names the effect it raises itself (`{Throw[AssertionError]}` in and
+  out) — which is fine and was not before v6: discharge is a **frame** installed at the `runThrow` call, and
+  the nearest enclosing frame is its own, so the body's raise is caught here and the re-raise leaves through
+  the enclosing case's frame.
 
 - `eliot.test.Runner` — `def main: {Console} Unit`, the executable entry point.
   `foldNamedValues("testCases", noFailures, runSuite)` gathers every suite (see reflection below); `runSuite`
@@ -97,23 +104,19 @@ three tiny modules plus a self-test:
   "no lines = passed" count) serves the subject headers and the summary alike — one traversal, one convention,
   no second pass over the cases.
 
-  `runSuite` receives each suite as a computation in a slot it **declares** — `suite: {Writer[List[TestResult]] | G}
-  Unit` over its own carrier `G ~ Console & Effect` — and receives the suites after it as `rest: G[List[List[String]]]`,
-  still unrun. So suites run in gathered order, each one's own output precedes its own report, and a suite's effects
-  ride the carrier the runner was compiled to. Both `rest` and the discharged `Writer` must be `val`-bound before they
-  meet `++`, whose element parameter is a plain type parameter and so may not receive a computation; the fold's seed is
-  `noFailures`, a `{Console} List[List[String]]` rather than a bare `empty`, because `rest` declares a computation.
+  `runSuite` receives each suite as a computation in a slot it **declares** —
+  `suite: {Writer[List[TestResult]]} Unit` — and the suites after it as `rest: {} List[List[String]]`, still
+  unrun. The slot supplies only `Writer`, the one effect `runSuite` discharges; every other effect a suite
+  performs was bound where the suite was written. So suites run in gathered order and each one's own output
+  precedes its own report.
 
-  The reporting is a pure-then-print split, and deliberately so: **the runner discharges nothing beyond the suite's
-  `Writer`** — each body ran at its `in`, so `failureLines` merely folds `result.outcome` into that case's
-  **failure lines**, empty
-  exactly when it passed. `report` derives both the counts and the detail body from the one list, and
-  `runSubject` is the only thing that prints. That split is also what makes it *compile*: `foldPair`'s
-  result parameter declares no effect row, so a `{Console}` computation may not be routed through it (rule 4 —
-  a plain type parameter is a payload). Keep the fold's body pure and `.foreach(printLine)` the lines it yields
-  — which is why `runSubject` reads its group through the pure `groupSubject`/`groupResults` projections (the
-  stdlib's `keyOf` trick) rather than printing inside a `foldPair`. `subjectOf` is the separate grouping key,
-  reaching through `result.testCase.subject`.
+  The reporting is a pure-then-print split, and deliberately so: **the runner discharges nothing beyond the
+  suite's `Writer`** — each body ran at its `in`, so `failureLines` merely folds `result.outcome` into that
+  case's failure lines, empty exactly when it passed. `report` derives both the counts and the detail body from
+  the one list, and `runSubject` is the only thing that prints. Keep the fold's body pure and
+  `.foreach(printLine)` the lines it yields — which is why `runSubject` reads its group through the pure
+  `groupSubject`/`groupResults` projections (the stdlib's `keyOf` trick) rather than printing inside a
+  `foldPair`. `subjectOf` is the separate grouping key, reaching through `result.testCase.subject`.
   `describe` is the one place turning an `AssertionError` shape into presentation lines, and the `ansi*` helpers
   the one place holding an escape sequence. `header` picks its line with `fold`, **not** `if..else`: `else` and
   `++` have no declared relative precedence, so an `if..else` whose arms concatenate strings does not compile.
@@ -124,56 +127,70 @@ reflection — there is no central list, no annotations, no import wiring.** The
 top-level value literally named `testCases` across all modules on the compiler path as a right fold —
 `runSuite(name₁, suite₁, runSuite(name₂, suite₂, noFailures))`. **Reflection reifies code, not data**: each
 gathered suite is an *argument* of a slot `runSuite` declares, never an element stored in a list, which is
-exactly what lets a suite be a computation. (A list element is a payload by rule 4, and a stored row must be
-pinned — which is why the earlier `namedValues[Test]` shape forced the suite to pin its carrier to `Id`, and
-why nothing pins one now.) `namedValues` remains, as the same fold at the free monoid, for gathering plain data.
+exactly what lets a suite be a computation. `namedValues` remains, as the same fold at the free monoid, for
+gathering plain data.
 
-To add tests, declare `def testCases: {Writer[List[TestResult]]} Unit = { "…" should "…" in pure { … } … }` in
+To add tests, declare `def testCases: {Writer[List[TestResult]]} Unit = { "…" should "…" in { … } … }` in
 any module inside a compiled source root, widening the row to what those tests need — `{Writer[List[TestResult]],
 Console} Unit` to perform console effects for real. `test/eliot/test/BasicAssertionsTests.els` is the worked
-example for pure cases, and `test/eliot/test/example/GreeterTests.els` for the effectful ones. A suite is picked
+example for plain cases, and `test/eliot/test/example/GreeterTests.els` for the effectful ones. A suite is picked
 up simply by being on the path; nothing references it. Suites are folded in qualified-name order, so a run is
-reproducible. (One `testCases` per module — the reflection gathers one value per module under that name, the way
-`PluginRegistry` gathers `contribution`.)
+reproducible. (One `testCases` per module — the reflection gathers one value per module under that name.)
 
 > **Watch the build cache.** The compiler caches facts in the output directory (`target/.eliot-*`), and a
 > `NamedValuesIndex` was once observed surviving a module's addition, so a newly added suite silently did not
 > run while the build reported success — tests that do not run look exactly like tests that pass. It has not
-> reproduced since; if a suite you just wrote does not appear in the report, `rm target/.eliot-*` and rebuild
+> reproduced since; if a suite you just wrote does not appear in the report, `rm -rf target/.eliot-*` and rebuild
 > before looking anywhere else.
 
-- `eliot.test.Mock` — **the doubles, and the vocabulary a test writes.** One carrier (`Mock`), one
-  `Effect` instance, one generic `implement[E ~ Show] Throw[E, Mock]` that serves *every* failure channel
-  including a project's own error types and `AssertionError` itself, and a concrete double for every base
-  effect ability: `Console`, `Process`, `FileSystem`, `Environment`, `Log`. A test writes **no fixture** —
-  it arranges, acts and asserts in one `in mocked { … }` block.
+- `eliot.test.Mock` — **the doubles, and the vocabulary a test writes.** One **named implementation per base
+  effect** — `mockConsole`, `mockLog`, `mockFileSystem`, `mockProcess`, `mockEnvironment` — and one journal,
+  `State[Recording]`, that their clauses write to. A test writes **no fixture**: it arranges, acts and asserts
+  in one `in mocked { … }` block.
 
-  Arranging is an effect (`ability Mocking`), which is why `mocked` takes only a block: `whenSpawning`
+  `mocked` is the whole binding, written out on its slot's type:
+
+  ```eliot
+  def mocked(
+        body: {Console, Log, FileSystem, Process, Environment, Mocking, Calls, Throw[IoError], Throw[AssertionError]} Unit
+           with mockConsole with mockLog with mockFileSystem with mockProcess with mockEnvironment
+     ): {Throw[AssertionError]} Unit =
+     runStateToValue(emptyRecording, catch[IoError, Unit](body, e -> fail("unexpected I/O failure: " ++ show(e))))
+  ```
+
+  Read it as: the slot supplies those effects to the body, five of them bound to doubles by name, and the
+  journal (`State[Recording]`) is discharged here so it never appears in a test's own row. An effect nothing
+  mocks is not bound by this chain, so it is a compile error rather than a test that quietly does I/O.
+  `Throw[IoError]` — which `FileSystem` and `Process` declare though no double ever raises one — is caught and
+  reported as a failed case rather than left for a test to discharge by hand. The `catch`'s type arguments are
+  spelled because the slot's row names `Throw` **twice**, and only the call can say which one is discharged.
+
+  Arranging is an effect (`effect Mocking`), which is why `mocked` takes only a block: `whenSpawning`
   (with `succeeding`/`failing`/`exiting`), `whenSpawningCreates`, `whenReading`, `withFile`,
   `withDirectory`, `withVariable`, `withArguments`, `withWorkingDirectory`. **The most recent arrangement
   wins**, so a body may act, re-arm and act again, and a shared arrangement is an ordinary `{Mocking} Unit`
   definition — this framework's `@Before`, with no annotation behind it.
 
-  Verifying is an effect too (`ability Calls`): `calls`, `callsMatching`, `lastCall`, `callCount`,
+  Verifying is an effect too (`effect Calls`): `calls`, `callsMatching`, `lastCall`, `callCount`,
   `wasCalled`, `wasNeverCalled`, `wasCalledOnce`, `wasCalledTimes`, `wasCalledAtLeast`, `wasCalledAtMost`,
   `wereCalledInOrder`, `nothingWasCalled`, `onlyTheseWereCalled`, `forgetCalls`. Matching is by
-  **containment** of the recorded line. `raising(report, { … })` expects a failure — `expect` cannot, since
-  it stacks a `ThrowCarrier` over the carrier and a double earns no lift through it.
+  **containment** of the recorded line. `raising[E ~ Show](report, { … })` expects a failure — an ordinary
+  top-level def now, not an operation of `Mocking`, so it works for a project's own error type as well as for
+  `AssertionError`.
 
-  **Why the framework owns this and a project cannot**: an instance must live with its ability or with a
-  type argument, and an ability may have at most one carrier-generic instance — so a double is necessarily
-  concrete and necessarily colocated with the carrier. `docs/mocking.md` has the measurements. What a
-  project still writes is a carrier for *its own* abilities, which is what `eliot-build`'s `TablePackages`
-  is.
+  **Why the framework owns this and a project cannot** — the v5 reason is gone (an implementation no longer
+  needs a type to hang on, and a named one is never searched, so a project *could* now write its own doubles
+  freely). What the framework still owns is the **work**: five doubles, one journal and one binding chain,
+  written once. What a project writes is a double for *its own* effects.
 
 ## Testing effectful code
 
-There are three ways to write a test that involves effects, and all three register into the same suite.
+There are three ways to give a case a body, and all three register into the same suite.
 
 ### Real effects, inline — the default
 
-A suite's row says what its tests may do. Declare the effect and write the body inline; no carrier is named, no
-definition of its own is needed, and the effect runs on whatever carrier the `Runner` was compiled to:
+A suite's row says what its tests may do. Declare the effect and write the body inline; the implementation is
+whatever the `Runner` binds at `main`:
 
 ```eliot
 def testCases: {Writer[List[TestResult]], Console} Unit = {
@@ -186,143 +203,84 @@ def testCases: {Writer[List[TestResult]], Console} Unit = {
 
 A failed assertion stops **that case** — `in` discharges `Throw[AssertionError]` per case — and the next case
 still runs. A suite that declares only `{Writer[List[TestResult]]}` rejects a body that performs ("This value
-performs the effect 'Console' but does not declare it"), and `in pure { … }` rejects one *whatever* the suite
-declares, so opting out of effects is always available and always enforced.
+performs the effect 'Console' but does not declare it").
 
-### A faked carrier, for determinism
+> **A row cannot be closed.** There is no way to say "this body may perform *nothing*, whatever the suite
+> allows". That is what `in pure { … }` meant, and it is **deleted**: a slot's row says what it *supplies*, not
+> what it forbids, and an entry it does not supply continues the walk into the caller's scope. Making it
+> expressible would be a language addition. A case that should perform nothing simply performs nothing.
 
-Real effects are not always what a test wants. Production code that declares `{Console}` can equally be run
-against a test double, because **the carrier is the injection point** (the compiler's own
-the compiler's `docs/effects.md` §6, and `examples/src/EffectsTestFramework.els`). The test declares its own pure carrier
-and its own instance of the ability for it; production code is untouched and names no carrier.
-`test/eliot/test/example/` is the worked example: `Greeter` is the application under test, `FakeConsole` is the
-carrier and its discharge words, and `GreeterTests` registers all four styles in **one** suite.
+### A named implementation, for determinism
 
-A fake carrier cannot cheat: it has no `Suspend` instance, and `Suspend` is the only route to a native side
-effect, so a body running on it is structurally incapable of touching the real console.
-
-### Run-then-assert
-
-A fake run inside a `pure { … }` body would be written at that body's own carrier, so the run goes in a plain
-`def` beside it and the body asserts on the value that answers. (This style is a *choice*, not a requirement —
-since the capture tag a run may be written inline; run-then-assert is still the clearer shape when the assertion
-is about a finished transcript rather than the steps.)
+Production code that declares `{Console}` can equally run against a double, because **the implementation is the
+injection point**. The test declares its own named `implement`; production code is untouched and names nothing.
+`test/eliot/test/example/` is the worked example: `Greeter` is the application under test and `GreeterTests`
+registers the styles in **one** suite.
 
 ```eliot
-private def greetTranscript: String = transcriptOf(singleton("Bob"), greet)   // fake run: its own definition
+effect Terminal {
+   def write(line: String): Unit
+   def read: String
+}
 
-"greet" should "greet whoever the console offers" in pure {
-   greetTranscript shouldBe "Hello, Bob!\n"                                   // assertion: the framework's body
+def greet: {Terminal} Unit = {                  // production code
+   val name = read
+   write("Hello, " ++ name ++ "!")
+}
+
+implement session: Terminal {                   // the test's double, in the test module
+   def write(line: String): {Writer[String]} Unit = tell(line ++ ";")
+   def read: String = "Bob"
+}
+
+def greetTranscript: String = runWriterToLog(greet with session)
+```
+
+A double **cannot cheat**: a user module declares no natives, so an implementation reaches the world only
+through effects **its own clauses declare** — which are charged, and bound, at the binding site. A double
+**keeps its own state through an effect** (`Writer[String]` above), discharged where it is bound, never
+appearing in `greet`'s row. And interpretation is **per effect**: `body with mockConsole with mockFileSystem`
+leaves everything else at its default.
+
+### An author's own word
+
+Give a def a single `{…}`-rowed parameter with the `with` on its slot type and it reads as a bare word with a
+block, the same shape as `mocked`:
+
+```eliot
+def onTerminal(body: {Terminal, Throw[AssertionError]} Unit with session): {Throw[AssertionError]} Unit = …
+
+"greet" should "greet whoever the terminal offers" in onTerminal {
+   greet
+   transcript shouldBe "Hello, Bob!;"
 }
 ```
 
-### Direct style, asserting part-way through a faked run
+Assertions and faked effects interleave freely — there is no stacking, no lifting and no region rule, all of
+which were carrier artefacts.
 
-This **does** work, and the compiler's `docs/effects.md` §7.7 has been corrected to say so — but not the way its
-retired L3 note tried it. Pinning the assertion effect *over* the fake carrier (`{Throw[AssertionError] | Session}
-Unit`) does fail, for the two reasons L3 recorded: a fake's abilities have no canonical carrier, so they cannot be
-pinned-row entries,
-and the ability would need an instance for the whole stack rather than the base. The move that works is to stop
-stacking: give the **fake carrier itself** a `Throw[AssertionError]` instance, so assertions ride the same
-carrier as the faked effects. No row is pinned, so no cross-lift is needed:
+## What does not work
 
-```eliot
-data Recorded[A](runRecorded: Session => Pair[Either[AssertionError, A], Session])
-
-implement Console[Recorded] { … }                       // the faked effect
-implement Throw[AssertionError, Recorded] {             // …and assertions, on the same carrier
-   def raise[A](err: AssertionError): Recorded[A] = Recorded(s -> Pair(Left(err), s))
-}
-
-def onConsole(input: List[String], body: Recorded[Unit]): Outcome =   // the author's own discharge word
-   first(runRecorded(body)(Session(input, "")))
-```
-
-`Effect[Recorded]`'s `flatMap` short-circuits on a `Left`, so a failed assertion stops the rest of the body the
-way a real failure stops a real test. The body then reads as an ordinary script:
-
-An author's discharge word answers the **assertion effect** (`{Throw[AssertionError]} Unit`), exactly as `pure` does,
-so `in` cannot tell the two apart. Give it a single parameter and the case reads as a bare word with a block, the
-same shape as `pure`: `"…" should "…" in onConsole { … }`. It runs the body down to an `Outcome` and reflects that
-back with `orRaise`. `onConsoleReading(input, { … })` is the same word for a body that reads, with `readLine`'s
-lines scripted. So all three ways to give a case a body read alike — inline on the suite's row, `pure { … }`, and
-the author's own word:
-
-```eliot
-private def farewellOutcome: Outcome = onConsole(empty, farewellScript)
-
-private def farewellScript: {Console, Transcript, Throw[AssertionError]} Unit = {
-   printLine("--")
-   transcript shouldBe "--\n"                          // asserted mid-run, before the rest happens
-   farewell("Bob")
-   transcript shouldBe "--\nGoodbye, Bob.\nCome back soon!\n"
-}
-```
-
-**A faked case now costs no helper definitions at all**, because `onConsole` declares its body slot with the
-**capture tag** `{| Recorded} Unit` — the pinned row at zero entries, which is the same type as `Recorded[Unit]`
-but declares that the slot *hosts a computation on that carrier* (compiler `docs/effects.md` §2.3, shipped as W3
-on 2026-09-04). The tag makes the slot a capture, so the elaborator writes nothing into it and the checker
-instantiates the body at `Recorded` — even at the `in` site, inside the suite's own region. Both the run and a
-multi-statement body are written inline.
-
-Without the tag the **region rule** still governs, and it is worth knowing why the two definitions used to be
-forced: a foreign concrete carrier can only be instantiated in a region with no ambient carrier of its own, and
-the suite is a region, so an untagged fake run written there is written at the suite's own `Writer` stack. That
-is what `transcriptOf`'s and `onConsole`'s tags now opt out of.
-
-### The one rule to internalize about fakes: do not stack over them
-
-A real effect instance is **carrier-polymorphic** (`implement[F[_] ~ Suspend] Console[F]`), so it applies at any
-stack whose base can suspend — `Suspend` is doing the work an mtl `lift` would, which is why real effects appear
-to compose freely. A fake instance is **monomorphic at one concrete carrier** (`implement Console[Recorded]`) —
-which is exactly what makes it uncheatable — and therefore gets **no lifting at all**. The moment a stdlib
-control carrier is stacked over a fake, resolution fails at the stack:
-
-```
-No ability implementation found for ability 'Transcript' with type arguments [{Throw[AssertionError] | Recorded}]
-```
-
-So give the fake carrier its own instance of *everything* the body needs, assertions included
-(`implement Throw[AssertionError, Recorded]`), and let it all ride one carrier. That is why `FakeConsole`
-looks the way it does, and it is what makes the interleaved style work. A missing cell can be hand-written
-(`implement[E, G[_] ~ Transcript & Effect] Transcript[ThrowCarrier[E, G]]` does resolve and run) but it is one
-instance per (ability × carrier layer), so reach for it only when the no-stacking answer genuinely fails.
-
-### What does not work
-
-- **`Throw` composes with no other stdlib control effect over `Id`.** The cross-lift matrix has no
-  `Throw[E, StateCarrier[…]]`, `State[S, ThrowCarrier[…]]`, `Throw[E, DepCarrier[…]]` or
-  `Dep[X, ThrowCarrier[…]]`, so a discharge word over a pinned stack (`{Throw[AssertionError], State[S] | Id}`,
-  either pin order) does not compile. This is the same n² gap as the fake-lifting one above, and the same
-  single-carrier answer applies — which is why the faked route goes through one custom carrier rather than a
-  stack, and serves `State`/`Dep` fakes too.
-- **`message` pins its body to `| Id`, and cannot be un-pinned.** Not a choice: a parameter row entry is
-  *supplied* — stacked as an extra layer — only when the definition's own declared return row does not already
-  name it. `message` raises `Throw[AssertionError]` itself, so a `{Throw[AssertionError]}` parameter row would
-  denote the same carrier rather than one above it. `expect` **is** un-pinned (its `E` is its own binder, a
-  distinct entry), so it wraps bodies that perform; `message` still cannot. Neither can wrap an assertion that
-  reads a fake, for the stacking reason above.
-- **`import eliot.collection.List` shadows `Effect`'s `map`/`flatMap` in the same file, silently.** Both are
-  explicit imports and `List` wins, so carrier code in that file resolves to the list combinator and dies with a
-  message pointing nowhere near the cause — `No ability implementation found for ability 'X' with type arguments
-  [List]`. There is no shadowing diagnostic. A file that writes an `Effect`/carrier instance body must therefore
-  not import `eliot.collection.List`; put the instance in its own module, or avoid `map`/`flatMap` there.
-- **A computation may not be an argument of a plain type parameter** — `caseFailures ++ rest` and
-  `append(list, suite)` are both rejected ("This argument is a computation, but argument 2 of '…' declares no
-  effect row"). Bind it to a `val` first, or hand it to a slot that declares a row. This is rule 4, and it is the
-  reason reflection folds instead of collecting.
+- **A row cannot be closed** (above) — `pure { … }` has no v6 spelling.
+- **Sometimes a discharger's type arguments must be spelled.** The compiler reads a supplied entry's arguments
+  off the *actual's declaration*; where nothing answers it refuses to guess ("Cannot tell which 'Throw' this
+  call supplies… Write it out at the call"). This framework hits all three shapes: the actual is a **parameter**
+  (`runThrow[AssertionError, Unit](body)` in `describedAs`, `runThrow[E, Unit](body)` in `raising`), the actual
+  **raises nothing** (`raising[AssertionError]("expected", printLine(…))` in `MockVerificationTests`), or the
+  slot's row names the **same ability twice** (`catch[IoError, Unit](…)` in `mocked`).
+- **A computation may not be `val`-bound or dot-chained before being discharged.** Both are rowless positions,
+  so the call *runs* there and the enclosing def is charged with the effect. Pass it to the discharger directly.
+- **`import eliot.collection.List` shadows `Effect`'s `map`/`flatMap`** — no longer a hazard here, since there
+  is no `eliot.carrier` and nothing to shadow.
+- **A stored computation's binding is fixed where it is constructed.** A `with` applied to it later is an
+  error, not a rebinding.
 
 The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, which prints one `✔`/`✗` line
-per test subject with its pass and failure counts, then a closing summary line for the whole run.
+per test subject with its pass and failure counts, then a closing summary line for the whole run. **96 cases,
+all passing.**
 
-> **Compiler version.** Builds on compiler `c1bc4704` (2026-09-03). Needs **`foldNamedValues`** (shipped 2026-08-18 —
-> "Reflection reifies code, not data"), which is what allows a suite to be a computation and so removed every
-> pinned carrier from the framework: gathered values are handed to a slot the algebra declares instead of being
-> stored in a `List`. It also needs the ambient **`Writer` effect** + **`Combine[List]` monoid** (shipped
-> 2026-07-21 — `Writer` is `State` restricted to append-only, `Combine` gained `empty`). No `data` here stores an
-> effect row, no alias carries one, and the only carrier named anywhere in the framework is the `Id` inside
-> `outcomeOf`, which is what makes `pure` mean what it says.
+> **Compiler version.** Needs a compiler at or past `32406522` (2026-09-09) — effects v6 plus the fix for an
+> under-applied ability-implementation native, which `MockFileSystemTests`' `listDirectory(…).map(show)` hits.
 
 ## Building and running (compiler CLI)
 

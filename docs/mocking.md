@@ -1,9 +1,15 @@
 # Mocking Belongs to the Framework: a Plan
 
-Status: **BUILT**, 2026-09-04, as `eliot.test.Mock`. 96 cases cover it here and `eliot-build` migrated onto
-it (146 green, its 195-line fixture deleted). §6 records what the plan got wrong, each item found by
-compiling it. The four language facts in §2 were measured the same way, and they are what decided the
-design.
+Status: **BUILT**, 2026-09-04, as `eliot.test.Mock`, and **carried onto effects v6 on 2026-09-09**. 96 cases
+cover it here and `eliot-build` migrated onto it (146 green, its 195-line fixture deleted). §6 records what
+the plan got wrong, each item found by compiling it; **§8 records what v6 changed**, which is most of the
+*reasoning* and almost none of the *shape*.
+
+> **Read §1–§7 as history.** They are written in carrier vocabulary, and Eliot has no carrier since
+> effects v6: an effect is an ability declared with `effect`, and an **implementation is a name** bound by
+> `with`. Three of §2's four measured facts — the ones that made a per-project fixture *impossible* and
+> therefore forced this design — no longer hold. The design survives them anyway, for a weaker but still
+> sufficient reason (§8). `.claude/CLAUDE.md` describes what is actually in the tree.
 
 ## 1. The problem, from the user's side
 
@@ -244,3 +250,50 @@ catch-all instance would otherwise collide with the framework's wide `Mock`.
 - **No compiler change in stages 1–3.** Everything above compiles today; stage 4 only *asks* the question.
 - **No widening of `eliot.test.Runner`'s row.** A mocked suite performs nothing, so `{Console}` stays
   correct — which is the point of doing it this way.
+
+## 8. Effects v6 — what changed, and why the design survived it
+
+Effects v6 (compiler `docs/effects.md`, 2026-09-09) removed the carrier. An effect is an ability declared
+with the `effect` keyword, an implementation is a **name** bound by `with` and forwarded lexically, and a
+row-typed slot is a thunk whose operations were bound where it was written.
+
+**Three of the four facts in §2 are dead, and they were the load-bearing ones.**
+
+1. *"An ability may have at most one carrier-generic instance."* — no subject: there are no carriers, and a
+   **named** implementation is never searched, so it is not checked for overlap at all. Any number may exist
+   for one effect.
+2. *"An instance must be colocated with its ability or one of its type arguments; a test module cannot write
+   one."* — **false now**, and this is the big one. That colocation rule still governs an *anonymous*
+   implementation (the default), but a named one may live anywhere. A project can write its own doubles
+   freely, in its own test module.
+3. *"One generic instance covers every failure channel."* — no subject. `Throw[E, Mock]` is gone with the
+   carrier; `raising` is now an ordinary `raising[E ~ Show](report, body: {Throw[E]} Unit)`, which works for a
+   project's own error type because the *discharger* is generic, not because one instance is wide.
+4. *"A whole mocked scenario is written inline in one block."* — **still true**, and now for a simpler
+   reason: `mocked`'s slot declares a row and carries the `with` chain on its type, so the body is written
+   where it stands and needs no capture tag. The tag itself (`{| Mock} Unit`, W3) is gone with the carrier.
+
+**So why does the framework still own mocking?** Not because a project *cannot* do it — it now can — but
+because of the **work**: five doubles, a journal effect, a verification effect and one binding chain, written
+once instead of per project. §1's table of 195 lines is still what a project avoids; it is now a convenience
+rather than a constraint, and that is a better reason.
+
+**What changed in the code**, beyond the mechanical de-carrying:
+
+- The mock **carrier** is gone. The doubles are five named implementations — `mockConsole`, `mockLog`,
+  `mockFileSystem`, `mockProcess`, `mockEnvironment` — bound by one `with` chain on `mocked`'s slot type,
+  and the journal lives in `State[Recording]`, a supplied entry discharged at that slot, which never appears
+  in a test's own row.
+- `mocked` must now discharge **`Throw[IoError]`**, which `FileSystem` and `Process` declare though no double
+  ever raises one; it reports it as a failed case. Its `catch` spells its type arguments, because the slot's
+  row names `Throw` twice and only the call can say which one is discharged.
+- `raising` left `Mocking` and became an ordinary top-level def (fact 3 above).
+- `describedAs` lost its `Id` pin: discharge is a *frame*, so a definition may discharge the very effect it
+  declares — the nearest enclosing frame is its own.
+- **`pure { … }` is deleted.** It forbade *all* effects by pinning the body to `Id`, and a slot's row no
+  longer closes: an entry a slot does not supply continues the walk into the caller's scope, so a slot cannot
+  say "and nothing else". The cases that used it are plain `in { … }`, bounded by the suite's own row.
+  Making it expressible again would be a **language** addition, and is not planned.
+- §6's third bullet — *"a carrier-headed slot double-wraps when written inside the mocked region"* — has no
+  subject. There is no region and no wrapping.
+
