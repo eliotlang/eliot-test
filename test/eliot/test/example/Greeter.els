@@ -1,12 +1,12 @@
 /**
  * The **application under test** for the worked examples in this package. It is ordinary production code: some of it
  * is pure, some of it declares `{Console}`, and none of it knows a test exists — no injected handler, no extra
- * parameter, no test hook, and above all no carrier. Declaring an effect row is the whole of its testability, because
- * a row leaves the carrier to whoever runs the code, and in a test that is the test.
+ * parameter, no test hook. Declaring an effect row is the whole of its testability, because a row leaves the
+ * implementation to whoever binds it, and in a test that is the test.
  */
 
 /**
- * Pure application logic: no row, so it is tested with the framework's own `pure` word and nothing else.
+ * Pure application logic: no row at all, so a case testing it can only assert.
  */
 def greeting(name: String): String = "Hello, " ++ name ++ "!"
 

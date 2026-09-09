@@ -1,4 +1,3 @@
-import eliot.carrier.Effect
 import eliot.collection.List
 import eliot.file.Path
 import eliot.file.File
@@ -21,9 +20,10 @@ import eliot.test.Assertion
  * }
  * ```
  *
- * **A mocked case names no carrier and writes no fixture.** Production code that declares
- * `{Process, FileSystem}` names no carrier either, so instantiating it here is what makes its effects this
- * framework's doubles; `eliot.test.Mock` holds those doubles and is not something a test imports.
+ * **A mocked case names no implementation and writes no fixture.** Production code that declares
+ * `{Process, FileSystem}` names none either, so the doubles are bound by the one `with` chain on `mocked`'s own
+ * slot — the only way a callee binds calls it cannot see. `eliot.test.Mock` holds those doubles and is not
+ * something a test imports for them.
  *
  * **Arranging is an effect**, which is why `mocked` takes only a block: `whenSpawning(…)` performed inside the
  * body is what tells the double, so there is no world to build outside and hand in. A shared arrangement is an
@@ -36,23 +36,31 @@ import eliot.test.Assertion
  * command line, and `wasCalled("git ls-remote --tags github.com/x/foo")` is available when the whole line is
  * the point. `calls` answers the recorded lines themselves when a test wants to assert on them directly.
  *
- * **What a mocked case cannot do is reach the outside**: the mock carrier has no `Suspend` instance, and
- * `Suspend` is the only route to a native side effect, so an effect nothing mocks is a compile error rather
- * than a test that quietly performs I/O.
+ * **What a mocked case cannot do is reach the outside.** A user module declares no natives and the platform's
+ * are private to its layer, so a double reaches the world only through effects its own clauses declare — and
+ * those are charged, and bound, right here at the slot. An effect nothing mocks is not bound by this chain, so
+ * it is a compile error rather than a test that quietly does I/O.
  */
 
 
 /**
- * Run `body` as a mocked case — the counterpart of `pure`, standing in exactly the same place:
- * `"…" should "…" in mocked { … }`.
+ * Run `body` as a mocked case — `"…" should "…" in mocked { … }`.
  *
  * The body may perform any effect this framework doubles, arrange what those doubles answer, verify what they
- * were asked, and assert on values, in any order. It starts from nothing arranged and nothing called. A raise
- * that is not expected — the code under test failing, or an assertion failing — ends the body and fails the
- * case with what was raised.
+ * were asked, and assert on values, in any order. It starts from nothing arranged and nothing called. An
+ * assertion failure rides straight out to the enclosing `in`; an `IoError` — which the `FileSystem` and
+ * `Process` effects declare, though no double ever raises one — is reported as a failed case rather than left
+ * for a test to discharge by hand.
+ *
+ * The whole binding is the `with` chain on the slot's type, and it is written out because a name for a set of
+ * implementations is deliberately not a feature. A project wrapping this word in one of its own restates the
+ * row and the chain.
  */
-def mocked(body: {| Mock} Unit): {Throw[AssertionError]} Unit =
-   orRaise(first(mockOutcome(emptyRecording, body)).foldEither(report -> Left(Failed(report)), _ -> Right(unit)))
+def mocked(
+      body: {Console, Log, FileSystem, Process, Environment, Mocking, Calls, Throw[IoError], Throw[AssertionError]} Unit
+         with mockConsole with mockLog with mockFileSystem with mockProcess with mockEnvironment
+   ): {Throw[AssertionError]} Unit =
+   runStateToValue(emptyRecording, catch[IoError, Unit](body, e -> fail("unexpected I/O failure: " ++ show(e))))
 
 /**
  * Arrange what a spawned process answers: any command line **containing** `commandFragment` answers `result`.
@@ -242,32 +250,54 @@ def onlyTheseWereCalled(fragments: List[String]): {Calls, Throw[AssertionError]}
    )
 
 /**
- * The mock carrier and its instances: the machinery that lets a test run production code against test
+ * Expect `body` to raise, and to report something containing `expectedReport` — a raise the test *wants*, from
+ * the code under test or from the framework's own words.
+ *
+ * ```eliot
+ * whenSpawning("ls-remote", failing(128, "no such repository"))
+ * raising("failed with exit code 128", publishedTags(cacheRoot, cached))
+ * ```
+ *
+ * Matching by containment rather than by equality is deliberate: a test should be able to pin the part it
+ * means without quoting a whole report. `expect` is the equality-based sibling, for a specific failure shape.
+ *
+ * The body is a slot supplying `Throw[E]`, so the raise is caught by the frame installed here and the calls
+ * made before it are kept, ready to be verified afterwards. It is an ordinary definition and not an operation
+ * of any effect: under v6 nothing about it needs the doubles, so it works for a project's own error type as
+ * readily as for the framework's.
+ */
+def raising[E ~ Show](expectedReport: String, body: {Throw[E]} Unit): {Throw[AssertionError]} Unit =
+   runThrow[E, Unit](body).foldEither(
+      raised -> matchedReport(expectedReport, show(raised)),
+      _ -> raise(Failed("expected a raise reporting '" ++ expectedReport ++ "', but nothing was raised"))
+   )
+
+/**
+ * The doubles and the state they keep: the machinery that lets a test run production code against test
  * doubles of the effects it performs, with no fixture of its own.
  *
- * **Nothing here is what a test writes.** A test imports `eliot.test.Mocked`, which is the vocabulary —
- * `mocked { … }`, the `when…`/`with…` arranging words, and the verifications. This module is the machinery
- * those words are made of, kept separate so the vocabulary a test imports carries no `eliot.file.File` names
- * with it.
+ * **Nothing here is what a test writes.** A test writes `mocked { … }`, the `when…`/`with…` arranging words,
+ * and the verifications above. This is what those words are made of.
  *
- * **Why the framework owns this and a project cannot.** An instance must live with its ability or with one
- * of its type arguments, and an ability may have at most one carrier-generic instance — so mock instances
- * are necessarily concrete (`implement Console[Mock]`), and necessarily colocated with the mock carrier.
- * Whoever declares the carrier must therefore write every mock, which is why each project used to rewrite
- * two hundred lines of fixture, and why this file exists once instead. See `docs/mocking.md` §2.
+ * **Why the framework owns this and a project could not, before.** Under v5 an instance had to live with its
+ * ability or with one of its type arguments, so every mock was necessarily colocated with a mock *carrier* and
+ * whoever declared that carrier had to write them all. A **named implementation** is never searched and may
+ * live anywhere, so that constraint is gone — a project can now write a double of its own wherever it likes.
+ * This file is still worth having: it is the doubles nobody should have to write twice.
  *
- * **How the doubles are chosen.** Nothing is registered: the platform's own instances are
- * `implement[F[_] ~ Suspend & …]`, `Mock` has no `Suspend`, so those decline and these are the unique
- * survivors. It is also why a mocked test *cannot* reach a real process or a real file: `Suspend` is the
- * only route to a native side effect, so an unmocked one is a compile error rather than a test that
- * quietly does I/O.
+ * **How the doubles are chosen.** By name, at exactly one place: the `with` chain on `mocked`'s slot type.
+ * Nothing is registered, nothing is searched, and the platform's own default implementations are not consulted
+ * — which is also why a mocked test cannot reach a real process or a real file.
  *
- * **What a mock answers** is decided by the `Arrangement`s a body has made when the call happens, most
- * recent first, so a mock can be re-armed mid-test. Anything unarranged answers the honest "nothing there"
- * for its method — no such file, no input, an exit code of zero — and every call, arranged or not, is
- * recorded in the journal, which is what the verifications read.
+ * **What a mock answers** is decided by the `Arrangement`s a body has made when the call happens, most recent
+ * first, so a mock can be re-armed mid-test. Anything unarranged answers the honest "nothing there" for its
+ * operation — no such file, no input, an exit code of zero — and every call, arranged or not, is recorded in
+ * the journal, which is what the verifications read.
+ *
+ * **Where the journal lives** is `State[Recording]`: every double's clauses declare it, and a clause row is
+ * charged wherever the name is bound — which is `mocked`'s slot, where `runStateToValue` supplies and
+ * discharges it. So the state is scoped to one case and never appears in a test's own row.
  */
-
 
 /**
  * One thing a test has told a mock, most recent taking precedence.
@@ -290,130 +320,67 @@ data Arrangement =
  */
 data Recording(journal: List[String], arrangements: List[Arrangement], pendingInput: List[String])
 
-/**
- * The mock carrier: a recording in, a value or a failure out, and the recording after.
- *
- * The failure is **rendered text** rather than a typed error, and that is forced rather than chosen: one
- * generic `Throw[E, Mock]` is what lets a project's own error types raise here without an instance they
- * could not legally write, and a second, more specific instance beside it is rejected ("Overlapping ability
- * implementation"). So every raise — a production error, or an assertion inside a mocked body — arrives
- * here already rendered by its own `Show`, and `eliot.test.Mocked` turns it back into a failed case.
- */
-data Mock[A](runMock: Function[Recording, Pair[Either[String, A], Recording]])
-
-implement Effect[Mock] {
-   def pure[A](a: A): Mock[A] = Mock(r -> Pair(Right(a), r))
-
-   def flatMap[A, B](f: Function[A, Mock[B]], fa: Mock[A]): Mock[B] =
-      Mock(r -> foldPair(
-         outcome -> after -> foldEither(e -> Pair(Left(e), after), a -> runMock(f(a))(after), outcome),
-         runMock(fa)(r)
-      ))
-
-   def map[A, B](f: Function[A, B], fa: Mock[A]): Mock[B] =
-      Mock(r -> foldPair(
-         outcome -> after -> Pair(foldEither(e -> Left(e), a -> Right(f(a)), outcome), after),
-         runMock(fa)(r)
-      ))
-}
-
-/**
- * **One instance for every failure channel there will ever be**, including error types declared in the
- * project under test and the framework's own `AssertionError`. A project could not have written this for
- * its own error: an instance may only live with its ability or with a type argument, and a test module is
- * neither.
- */
-implement[E ~ Show] Throw[E, Mock] {
-   def raise[A](err: E): Mock[A] = Mock(r -> Pair(Left(show(err)), r))
-}
 
 /**
  * Arranging, as an effect: what makes `mocked { … }` need no world built outside it. A test performs these
- * through the words in `eliot.test.Mocked` rather than calling them directly.
+ * through the words above rather than calling them directly.
  */
-ability Mocking[F[_]] {
+effect Mocking {
    /**
     * Tell the mocks one more thing, taking precedence over everything told before.
     */
-   def arranged(arrangement: Arrangement): {Mocking} Unit
+   def arranged(arrangement: Arrangement): Unit
 
    /**
     * Replace the console input still to be handed out.
     */
-   def queued(lines: List[String]): {Mocking} Unit
+   def queued(lines: List[String]): Unit
 
    /**
     * Forget every call recorded so far, keeping the arrangements — `reset` for verification only.
     */
-   def forgotten: {Mocking} Unit
-
-   /**
-    * Expect `body` to raise, and to report something containing `expectedReport` — the mocked counterpart of
-    * `expect`, which cannot serve here because it stacks a `ThrowCarrier` over the carrier and a double earns no
-    * lift through it.
-    *
-    * Matching by containment rather than by equality is deliberate: a raise arrives at a mock already rendered by
-    * its own `Show`, and a test should be able to pin the part it means without quoting a whole report.
-    *
-    * ```eliot
-    * whenSpawning("ls-remote", failing(128, "no such repository"))
-    * raising("failed with exit code 128", publishedTags(cacheRoot, cached))
-    * ```
-    *
-    * The calls the body made before raising are kept, so they can still be verified afterwards.
-    *
-    * The body is a **suspended** slot (`{} Unit`) — the same shape `fold`'s arms and `catch`'s handler have — so
-    * it is written inline where the carrier already is the mock's, and only run by this word. `Unit` rather than a
-    * type parameter because nothing here reads the body's answer; a body that has one is spelled as a block that
-    * ends in `unit`:
-    *
-    * ```eliot
-    * raising("failed with exit code 128", {
-    *    publishedTags(cacheRoot, cached)
-    *    unit
-    * })
-    * ```
-    */
-   def raising(expectedReport: String, body: {} Unit): {Mocking} Unit
+   def forgotten: Unit
 }
 
-implement Mocking[Mock] {
-   def arranged(arrangement: Arrangement): Mock[Unit] =
-      Mock(r -> Pair(Right(unit), Recording(r.journal, prepend(r.arrangements, arrangement), r.pendingInput)))
+/**
+ * The default `Mocking`: it keeps the recording in `State[Recording]`, which `mocked` supplies and discharges.
+ * Anonymous and in the effect's own module, so a body's `whenSpawning` binds it with nothing written anywhere.
+ */
+implement Mocking {
+   def arranged(arrangement: Arrangement): {State[Recording]} Unit = updateState(r -> arrangedIn(arrangement, r))
 
-   def queued(lines: List[String]): Mock[Unit] =
-      Mock(r -> Pair(Right(unit), Recording(r.journal, r.arrangements, lines)))
+   def queued(lines: List[String]): {State[Recording]} Unit =
+      updateState(r -> Recording(r.journal, r.arrangements, lines))
 
-   def forgotten: Mock[Unit] = Mock(r -> Pair(Right(unit), Recording(empty, r.arrangements, r.pendingInput)))
-
-   def raising(expectedReport: String, body: Mock[Unit]): Mock[Unit] =
-      Mock(recording -> checkedRaise(expectedReport, runMock(body)(recording)))
+   def forgotten: {State[Recording]} Unit = updateState(r -> Recording(empty, r.arrangements, r.pendingInput))
 }
 
 /**
  * Verifying, as an effect: what the mocks have been asked, in the order they were asked, each rendered as
  * one line (`printLine hello`, `/work$ git ls-remote --tags x`, `readFile /etc/hosts`).
  */
-ability Calls[F[_]] {
-   def recordedCalls: {Calls} List[String]
+effect Calls {
+   def recordedCalls: List[String]
 }
 
-implement Calls[Mock] {
-   def recordedCalls: Mock[List[String]] = Mock(r -> Pair(Right(r.journal), r))
+implement Calls {
+   def recordedCalls: {State[Recording]} List[String] = state.journal
 }
 
 /**
  * The console double: printing records the line, reading hands out what `whenReading` queued and answers
  * `None` once it is exhausted — end of input, which is what a real console answers there too.
  */
-implement Console[Mock] {
-   def printLine(s: String): Mock[Unit] = noting("printLine " ++ s)
+implement mockConsole: Console {
+   def printLine(s: String): {State[Recording]} Unit = noting("printLine " ++ s)
 
-   def readLine: Mock[Option[String]] =
-      Mock(r -> Pair(
-         Right(r.pendingInput.head),
-         Recording(append(r.journal, "readLine"), r.arrangements, r.pendingInput.tail)
-      ))
+   def readLine: {State[Recording]} Option[String] = {
+      val before = state
+
+      putState(Recording(append(before.journal, "readLine"), before.arrangements, before.pendingInput.tail))
+
+      before.pendingInput.head
+   }
 }
 
 /**
@@ -421,15 +388,22 @@ implement Console[Mock] {
  * recorded — the half of an invocation a command line does not carry — and the answer is the most recent
  * `whenSpawning` whose fragment the command line contains, or a silent success.
  */
-implement Process[Mock] {
-   def run(command: List[String], workingDirectory: Path): Mock[ProcessResult] =
-      Mock(r -> Pair(Right(spawnedFor(command, r)), afterSpawning(command, workingDirectory, r)))
+implement mockProcess: Process {
+   def run(command: List[String], workingDirectory: Path): {State[Recording]} ProcessResult = {
+      val before = state
 
-   def runInheritingIo(command: List[String], workingDirectory: Path): Mock[Int] =
-      Mock(r -> Pair(
-         Right(spawnedFor(command, r).exitCode),
-         afterSpawning(command, workingDirectory, r)
-      ))
+      putState(afterSpawning(command, workingDirectory, before))
+
+      spawnedFor(command, before)
+   }
+
+   def runInheritingIo(command: List[String], workingDirectory: Path): {State[Recording]} Int = {
+      val before = state
+
+      putState(afterSpawning(command, workingDirectory, before))
+
+      spawnedFor(command, before).exitCode
+   }
 }
 
 /**
@@ -438,72 +412,123 @@ implement Process[Mock] {
  * exist, deleting removes it — so a test can assert on what the code left behind and not only on what it
  * called.
  *
- * `foldCodePoints` is the one method that cannot answer honestly: reaching a string's code points needs a
+ * `foldCodePoints` is the one operation that cannot answer honestly: reaching a string's code points needs a
  * primitive the base does not offer, so it records the call and answers the accumulator unchanged.
  */
-implement FileSystem[Mock] {
-   def readFile(path: Path): Mock[String] =
-      Mock(r -> Pair(Right(contentAt(show(path), r)), noted("readFile " ++ show(path), r)))
+implement mockFileSystem: FileSystem {
+   def readFile(path: Path): {State[Recording]} String = {
+      val before = state
 
-   def writeFile(content: String, path: Path): Mock[Unit] =
+      putState(noted("readFile " ++ show(path), before))
+
+      contentAt(show(path), before)
+   }
+
+   def writeFile(content: String, path: Path): {State[Recording]} Unit =
       written("writeFile " ++ show(path), show(path), content)
 
-   def appendFile(content: String, path: Path): Mock[Unit] =
-      Mock(r -> Pair(
-         Right(unit),
-         holding(show(path), contentAt(show(path), r) ++ content, noted("appendFile " ++ show(path), r))
-      ))
+   def appendFile(content: String, path: Path): {State[Recording]} Unit = {
+      val before = state
 
-   def foldLines[B](initial: B, step: B => String => B, path: Path): Mock[B] =
-      Mock(r -> Pair(Right(foldedLines(initial, step, show(path), r)), noted("foldLines " ++ show(path), r)))
+      putState(holding(show(path), contentAt(show(path), before) ++ content, noted("appendFile " ++ show(path), before)))
+   }
 
-   def foldCodePoints[B](initial: B, step: B => Int => B, path: Path): Mock[B] =
-      Mock(r -> Pair(Right(initial), noted("foldCodePoints " ++ show(path), r)))
+   def foldLines[B](initial: B, step: B => String => B, path: Path): {State[Recording]} B = {
+      val before = state
 
-   def readLines(path: Path): Mock[List[String]] =
-      Mock(r -> Pair(Right(linesAt(show(path), r)), noted("readLines " ++ show(path), r)))
+      putState(noted("foldLines " ++ show(path), before))
 
-   def exists(path: Path): Mock[Bool] =
-      Mock(r -> Pair(Right(knownPaths(r).any(known -> known == show(path))), noted("exists " ++ show(path), r)))
+      foldedLines(initial, step, show(path), before)
+   }
 
-   def isDirectory(path: Path): Mock[Bool] =
-      Mock(r -> Pair(Right(directories(r).any(known -> known == show(path))), noted("isDirectory " ++ show(path), r)))
+   def foldCodePoints[B](initial: B, step: B => Int => B, path: Path): {State[Recording]} B = {
+      updateState(r -> noted("foldCodePoints " ++ show(path), r))
 
-   def listDirectory(path: Path): Mock[List[Path]] =
-      Mock(r -> Pair(Right(asPaths(entriesUnder(show(path), r))), noted("listDirectory " ++ show(path), r)))
+      initial
+   }
 
-   def walk(path: Path): Mock[List[Path]] =
-      Mock(r -> Pair(Right(asPaths(everythingUnder(show(path), r))), noted("walk " ++ show(path), r)))
+   def readLines(path: Path): {State[Recording]} List[String] = {
+      val before = state
 
-   def createDirectories(path: Path): Mock[Unit] =
-      Mock(r -> Pair(
-         Right(unit),
-         arrangedIn(Existing(show(path)), noted("createDirectories " ++ show(path), r))
-      ))
+      putState(noted("readLines " ++ show(path), before))
 
-   def delete(path: Path): Mock[Unit] =
-      Mock(r -> Pair(Right(unit), deleted(show(path), noted("delete " ++ show(path), r))))
+      linesAt(show(path), before)
+   }
+
+   def exists(path: Path): {State[Recording]} Bool = {
+      val before = state
+
+      putState(noted("exists " ++ show(path), before))
+
+      knownPaths(before).any(known -> known == show(path))
+   }
+
+   def isDirectory(path: Path): {State[Recording]} Bool = {
+      val before = state
+
+      putState(noted("isDirectory " ++ show(path), before))
+
+      directories(before).any(known -> known == show(path))
+   }
+
+   def listDirectory(path: Path): {State[Recording]} List[Path] = {
+      val before = state
+
+      putState(noted("listDirectory " ++ show(path), before))
+
+      asPaths(entriesUnder(show(path), before))
+   }
+
+   def walk(path: Path): {State[Recording]} List[Path] = {
+      val before = state
+
+      putState(noted("walk " ++ show(path), before))
+
+      asPaths(everythingUnder(show(path), before))
+   }
+
+   def createDirectories(path: Path): {State[Recording]} Unit =
+      updateState(r -> arrangedIn(Existing(show(path)), noted("createDirectories " ++ show(path), r)))
+
+   def delete(path: Path): {State[Recording]} Unit =
+      updateState(r -> deleted(show(path), noted("delete " ++ show(path), r)))
 }
 
 /**
  * The environment double: the arguments, variables and working directory a test arranged, and the honest
  * empties where it arranged none.
  */
-implement Environment[Mock] {
-   def arguments: Mock[List[String]] = Mock(r -> Pair(Right(argumentsIn(r)), noted("arguments", r)))
+implement mockEnvironment: Environment {
+   def arguments: {State[Recording]} List[String] = {
+      val before = state
 
-   def environmentVariable(name: String): Mock[Option[String]] =
-      Mock(r -> Pair(Right(variableIn(name, r)), noted("environmentVariable " ++ name, r)))
+      putState(noted("arguments", before))
 
-   def workingDirectory: Mock[Path] =
-      Mock(r -> Pair(Right(path(workingPathIn(r))), noted("workingDirectory", r)))
+      argumentsIn(before)
+   }
+
+   def environmentVariable(name: String): {State[Recording]} Option[String] = {
+      val before = state
+
+      putState(noted("environmentVariable " ++ name, before))
+
+      variableIn(name, before)
+   }
+
+   def workingDirectory: {State[Recording]} Path = {
+      val before = state
+
+      putState(noted("workingDirectory", before))
+
+      path(workingPathIn(before))
+   }
 }
 
 /**
  * The log double: a log line is a call like any other, so `wasCalled("log ")` verifies one.
  */
-implement Log[Mock] {
-   def log(s: String): Mock[Unit] = noting("log " ++ s)
+implement mockLog: Log {
+   def log(s: String): {State[Recording]} Unit = noting("log " ++ s)
 }
 
 /**
@@ -511,34 +536,10 @@ implement Log[Mock] {
  */
 def emptyRecording: Recording = Recording(empty, empty, empty)
 
-/**
- * Run `body` against `recording` and answer what it yielded, or the rendered failure that stopped it, and
- * the recording it left behind. The primitive `eliot.test.Mocked`'s words are built from.
- */
-def mockOutcome[A](recording: Recording, body: {| Mock} A): Pair[Either[String, A], Recording] =
-   runMock(body)(recording)
+private def noting(note: String): {State[Recording]} Unit = updateState(r -> noted(note, r))
 
-/**
- * Run `body` and answer only whether it raised, so a failure can be *expected*: `Some(report)` when it
- * raised, `None` when it completed. The recording it made is kept either way — a body that raises still
- * made the calls it made before raising, and a test may verify them.
- */
-def raisedReport[A](body: {| Mock} A): Mock[Option[String]] =
-   Mock(r -> foldPair(
-      outcome -> after -> Pair(Right(foldEither(report -> Some(report), _ -> None, outcome)), after),
-      runMock(body)(r)
-   ))
-
-/**
- * Fail the current mocked body with `report`, as a raise the discharge word will turn into a failed case.
- * The one thing `eliot.test.Mocked`'s verifications need that no ability offers.
- */
-def mockFailure[A](report: String): Mock[A] = Mock(r -> Pair(Left(report), r))
-
-private def noting(note: String): Mock[Unit] = Mock(r -> Pair(Right(unit), noted(note, r)))
-
-private def written(note: String, at: String, content: String): Mock[Unit] =
-   Mock(r -> Pair(Right(unit), holding(at, content, noted(note, r))))
+private def written(note: String, at: String, content: String): {State[Recording]} Unit =
+   updateState(r -> holding(at, content, noted(note, r)))
 
 private def noted(note: String, recording: Recording): Recording =
    Recording(append(recording.journal, note), recording.arrangements, recording.pendingInput)
@@ -620,8 +621,8 @@ private def contentOf(arrangement: Arrangement): String = arrangement match {
 }
 
 /**
- * The fold itself, out here where there is no carrier: a `{}`-rowed combinator called inside an instance method
- * would be a computation on the mock's own carrier, and `Right` takes a payload.
+ * The fold itself, over the recording it is handed: a pure function, so the clause that calls it stays three
+ * ordinary statements.
  */
 private def foldedLines[B](initial: B, step: B => String => B, at: String, recording: Recording): B =
    linesAt(at, recording).foldLeft(initial, line -> acc -> step(acc)(line))
@@ -741,21 +742,12 @@ private def countMismatch(count: Int, fragment: String, qualifier: String): {Cal
 private def advanced(call: String, pending: List[String]): List[String] =
    foldOption(pending, next -> fold(contains(next, call), pending.tail, pending), pending.head)
 
-private def checkedRaise(
-   expectedReport: String,
-   outcome: Pair[Either[String, Unit], Recording]
-): Pair[Either[String, Unit], Recording] =
-   foldPair(result -> after -> Pair(verdictOf(expectedReport, result), after), outcome)
-
-private def verdictOf(expectedReport: String, result: Either[String, Unit]): Either[String, Unit] =
-   result.foldEither(
-      report -> matchedReport(expectedReport, report),
-      _ -> Left("expected a raise reporting '" ++ expectedReport ++ "', but nothing was raised")
-   )
-
-private def matchedReport(expectedReport: String, report: String): Either[String, Unit] =
+/**
+ * `raising`'s verdict on a report that was raised: it passes when the report contains what the test named.
+ */
+private def matchedReport(expectedReport: String, report: String): {Throw[AssertionError]} Unit =
    fold(
       contains(expectedReport, report),
-      Right(unit),
-      Left("expected a raise reporting '" ++ expectedReport ++ "', but got '" ++ report ++ "'")
+      success,
+      raise(Failed("expected a raise reporting '" ++ expectedReport ++ "', but got '" ++ report ++ "'"))
    )

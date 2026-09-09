@@ -5,22 +5,20 @@ import eliot.test.Mock
 import eliot.test.example.Greeter
 
 /**
- * **One suite, three kinds of test.** Pure unit tests that may perform nothing at all, mocked tests that run
- * effectful code against doubles and assert on what it did, and tests performing real effects inline —
- * registered side by side in one `testCases`, reported by the one runner, counted in the one summary.
+ * **One suite, three kinds of test.** Unit tests over pure logic, mocked tests that run effectful code against
+ * doubles and assert on what it did, and tests performing real effects inline — registered side by side in one
+ * `testCases`, reported by the one runner, counted in the one summary.
  *
- * They mix because `in` discharges only the assertion effect: what a body may do is decided by this suite's
- * declared row (which admits `{Console}`), by `pure` where a case opts out of effects entirely, and by
- * `mocked` where a case wants doubles. **No carrier is named anywhere here, and no fixture is written** — the
- * doubles are the framework's.
+ * They mix because `in` supplies only the assertion effect: what a body may do is decided by this suite's declared
+ * row (which admits `{Console}`) and by `mocked` where a case wants doubles. **No implementation is named anywhere
+ * here, and no fixture is written** — the doubles are the framework's, bound by `mocked`'s own slot.
  */
 def testCases: {Writer[List[TestResult]], Console} Unit = {
-   // --- 1. a pure unit test: the body may assert and nothing else --------------------------------------------------
-   // `Id` has no `Suspend`, so a `printLine` in here is a compile error rather than a test that quietly does I/O.
-   "greeting" should "address the name it was given" in pure {
+   // --- 1. a unit test over pure logic ----------------------------------------------------------------------------
+   "greeting" should "address the name it was given" in {
       greeting("Bob") shouldBe "Hello, Bob!"
    }
-   "greeting" should "not be the bare name" in pure {
+   "greeting" should "not be the bare name" in {
       greeting("Bob") shouldNotBe "Bob"
    }
 
@@ -50,7 +48,7 @@ def testCases: {Writer[List[TestResult]], Console} Unit = {
    }
 
    // --- 3. real effects, written inline ----------------------------------------------------------------------------
-   // The suite's row declares `{Console}`, so a body may perform it — on whatever carrier the runner was compiled to.
+   // The suite's row declares `{Console}`, so a body may perform it — bound to the platform's own implementation.
    "real effects" should "be available to a body whose suite declares them" in {
       printLine(" | (this line was printed by a test performing a real Console effect)")
       success

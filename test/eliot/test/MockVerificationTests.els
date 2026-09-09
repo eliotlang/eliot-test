@@ -166,7 +166,7 @@ def testCases: {Writer[List[TestResult]]} Unit = {
       raising("but got 'Failed(other)'", raising("expected", failedWith("other")))
    }
    "raising" should "fail when the body raised nothing at all" in mocked {
-      raising("but nothing was raised", raising("expected", printLine("no raise here")))
+      raising("but nothing was raised", raising[AssertionError]("expected", printLine("no raise here")))
    }
    "raising" should "keep the calls the body made before it raised" in mocked {
       raising("boom", printedThenFailed)

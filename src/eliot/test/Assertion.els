@@ -1,5 +1,3 @@
-import eliot.lang.Id
-
 /**
  * The error raised by a failing assertion: a semantic failure shape carrying the already-rendered values
  * involved. Assertions render values to `String` at the raise site (where the `Show` instance is known);
@@ -53,23 +51,6 @@ implement Show[AssertionError] {
 }
 
 /**
- * Force a test body to be **pure**: `"…" should "…" in pure { … }` admits assertions and nothing else, whatever the
- * enclosing suite's row allows.
- *
- * The pin to `Id` is the word's meaning, not an implementation detail: `Id` has no `Suspend`, so a body handed to
- * `pure` can perform no effect at all, and a `printLine` inside one is a compile error ("The effect 'Console' cannot
- * run here, because the computation it runs in is pure…"). The verdict is then reflected back into the assertion
- * effect, so `pure` stands exactly where an effectful body stands and `in` cannot tell the two apart.
- */
-def pure(body: {Throw[AssertionError] | Id} Unit): {Throw[AssertionError]} Unit = orRaise(outcomeOf(body))
-
-/**
- * Run a pure body down to its verdict as plain data — what `pure`, `expect` and `describedAs` are each built from, and the
- * one place in the framework that names a carrier.
- */
-def outcomeOf[E, A](body: {Throw[E] | Id} A): Either[E, A] = runId(runThrow(body))
-
-/**
  * A trivially passing test body: it makes no assertion, so it never raises.
  */
 def success: {Throw[AssertionError]} Unit = unit
@@ -83,11 +64,10 @@ def fail(reason: String): {Throw[AssertionError]} Unit = raise(Failed(reason))
  * Expect the given `error` to be raised by `body`: passes when the raised error equals `error`, raises
  * `NotEqual` when the body raises a different error and `NoErrorRaised` when it completes without raising.
  *
- * The body's row is **open**: `{Throw[E]}` supplies one `Throw[E]` layer over whatever carrier the enclosing case
- * runs on, rather than pinning the body to `Id`. So `expect` composes with a case that performs — a real effect where
- * the suite declares one, or a faked one — and not only with a pure case. What it still cannot wrap is a body that
- * reads a *fake* carrier, since the supplied layer stacks a `ThrowCarrier` over that carrier and a fake deliberately
- * has no `Suspend` instance to lift its abilities through; see the framework notes on lifting.
+ * The body's row **supplies** `Throw[E]` and says nothing about anything else, so `expect` composes with any case:
+ * one that performs a real effect where the suite declares one, one running against doubles, or one that performs
+ * nothing at all. `runThrow` installs the frame the body's `raise` leaves through, and that frame is the nearest
+ * enclosing one for `E`, so a raise of an unrelated error type passes straight through it.
  */
 def expect[E ~ Eq & Show](error: E, body: {Throw[E]} Unit): {Throw[AssertionError]} Unit = {
    val outcome = runThrow(body)
@@ -131,11 +111,10 @@ infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A): {Thr
  * Named `describedAs` rather than `message` because `eliot.file.File` exports a `message` too, and no file may
  * import both — which would have barred every test that both asserts and names a file.
  *
- * Unlike `expect`, this one stays pinned to `Id`, and the reason is a language rule rather than a choice: a parameter
- * row entry is *supplied* — stacked as an extra layer — only when the definition's own declared return row does not
- * already name it. `describedAs` raises `Throw[AssertionError]` itself, so a `{Throw[AssertionError]}` parameter row would
- * denote the very same carrier rather than one layer above it, and there would be nothing to discharge.
+ * Its body's row names the effect `describedAs` itself raises, which is fine and was not before: discharge is a frame
+ * installed at the `runThrow` call, and the nearest enclosing frame is this one — so the body's raise is caught here
+ * and the re-raise leaves through the enclosing case's frame.
  */
-infix left below shouldBe def describedAs(body: {Throw[AssertionError] | Id} Unit, newMessage: String): {Throw[AssertionError]} Unit =
-   outcomeOf(body)
+infix left below shouldBe def describedAs(body: {Throw[AssertionError]} Unit, newMessage: String): {Throw[AssertionError]} Unit =
+   runThrow[AssertionError, Unit](body)
       .foldEither(_ -> fail(newMessage), _ -> success)

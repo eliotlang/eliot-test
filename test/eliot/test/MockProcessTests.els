@@ -9,7 +9,8 @@ import eliot.test.Mock
 /**
  * The process double: what it answers, how an arrangement is matched, and what it records.
  *
- * Nothing here spawns anything — the mock carrier has no `Suspend`, so it could not.
+ * Nothing here spawns anything: `mocked` binds `Process` to the double by name, and the platform's own
+ * implementation is never consulted.
  */
 def testCases: {Writer[List[TestResult]]} Unit = {
    "run" should "answer what the matching arrangement says" in mocked {
@@ -97,13 +98,13 @@ private def here: Path = path(".")
  * Code under test for the observed-not-seeded case: clone only when the mirror is not there — the shape
  * every cache has, and the one a mock that never changes the world cannot check.
  */
-private def cloneUnlessPresent: {Process, FileSystem} Unit =
+private def cloneUnlessPresent: {Process, FileSystem, Throw[IoError]} Unit =
    foldOption(unit, _ -> clone, missingMirror)
 
-private def missingMirror: {FileSystem} Option[Unit] =
+private def missingMirror: {FileSystem, Throw[IoError]} Option[Unit] =
    fold(exists(path("/cache/mirror")), None, Some(unit))
 
-private def clone: {Process} Unit = {
+private def clone: {Process, Throw[IoError]} Unit = {
    run(command("git").withArgument("clone"), here)
 
    unit
