@@ -1,4 +1,3 @@
-import eliot.carrier.Effect
 import eliot.compiler.Reflect
 import eliot.test.Test
 import eliot.test.Assertion
@@ -15,27 +14,31 @@ def main: {Console} Unit = printLine(summary(allCaseFailures))
 /**
  * Every case of every suite in the program, as its failure lines. `foldNamedValues` hands each gathered suite to
  * `runSuite`'s declared slot rather than storing it, so a suite is a *computation* the runner performs in place — which
- * is what lets a suite perform effects, on whatever carrier this runner was compiled to.
+ * is what lets a suite perform effects, bound wherever this runner was run.
  */
 private def allCaseFailures: {Console} List[List[String]] = foldNamedValues("testCases", noFailures, runSuite)
 
 /**
- * The fold's seed: no failures, as a computation on the runner's own carrier, since that is what `runSuite`'s `rest`
- * slot declares.
+ * The fold's seed: no failures. Plain data, since `runSuite`'s `rest` slot declares the empty row and so adds nothing
+ * of its own to whatever it is handed.
  */
-private def noFailures: {Console} List[List[String]] = empty
+private def noFailures: List[List[String]] = empty
 
 /**
  * Runs one module's suite and prepends its cases' failure lines to those of the suites after it.
  *
- * The suite arrives as a computation in a slot this definition *declares*, pinned only at its `Writer` so every other
- * effect it performs rides `G` — the carrier the runner itself runs on. `rest` is the suites after this one, still
- * unrun, so suites run in gathered order and each one's own output precedes its own report.
+ * The suite arrives as a computation in a slot this definition *declares*. That slot **supplies**
+ * `Writer[List[TestResult]]` — the registration effect, discharged right here — and nothing else, so every other
+ * effect a suite performs is charged outward to `runSuite`'s own row and is bound wherever this runner was run. The
+ * slot writes its row out rather than naming `Test`, because a row alias works in return position only.
+ *
+ * `rest` is the suites after this one, still unrun — the empty row adds nothing to them — so suites run in gathered
+ * order and each one's own output precedes its own report.
  */
-private def runSuite[G[_] ~ Console & Effect](
+private def runSuite(
       suiteName: String,
-      suite: {Writer[List[TestResult]] | G} Unit,
-      rest: G[List[List[String]]]): G[List[List[String]]] = {
+      suite: {Writer[List[TestResult]]} Unit,
+      rest: {} List[List[String]]): {Console} List[List[String]] = {
    val caseFailures = runWriterToLog(suite).groupBy(subjectOf).flatMap(runSubject)
    val restFailures = rest
 

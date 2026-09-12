@@ -1,41 +1,41 @@
-import eliot.collection.List
 import eliot.test.Assertion
 import eliot.test.Test
 
-// The suite declares its own row, and this one grants nothing but registration: every case here asserts and
-// performs nothing, so `pure` is belt-and-braces rather than the only thing holding the line.
-def testCases: {Writer[List[TestResult]]} Unit = {
-   "shouldBe" should "pass when given two equal strings" in pure {
+// The suite's return type is the whole of its declaration: `Test` grants registration and nothing else, so every case
+// here may assert and no more. A `printLine` in any of these bodies is a compile error, and it is the return type that
+// says so — there is no second word to wrap a body in.
+def testCases: Test = {
+   "shouldBe" should "pass when given two equal strings" in {
       "hello" shouldBe "hello"
    }
-   "shouldBe" should "raise NotEqual carrying both rendered values" in pure {
+   "shouldBe" should "raise NotEqual carrying both rendered values" in {
       expect(NotEqual("hello", "hell"), "hell" shouldBe "hello")
    }
-   "shouldNotBe" should "pass when given two different strings" in pure {
+   "shouldNotBe" should "pass when given two different strings" in {
       "hello" shouldNotBe "hell"
    }
-   "shouldNotBe" should "raise UnexpectedlyEqual carrying the shared value" in pure {
+   "shouldNotBe" should "raise UnexpectedlyEqual carrying the shared value" in {
       expect(UnexpectedlyEqual("hello"), "hello" shouldNotBe "hello")
    }
-   "success" should "raise nothing" in pure {
+   "success" should "raise nothing" in {
       success
    }
-   "fail" should "raise Failed carrying the given reason" in pure {
+   "fail" should "raise Failed carrying the given reason" in {
       expect(Failed("boom"), fail("boom"))
    }
-   "expect" should "pass when the body raises the expected error" in pure {
+   "expect" should "pass when the body raises the expected error" in {
       expect("boom", raise("boom"))
    }
-   "expect" should "raise NotEqual when the body raises a different error" in pure {
+   "expect" should "raise NotEqual when the body raises a different error" in {
       expect(NotEqual("boom", "bang"), expect("boom", raise("bang")))
    }
-   "expect" should "raise NoErrorRaised when the body raises no error" in pure {
+   "expect" should "raise NoErrorRaised when the body raises no error" in {
       expect(NoErrorRaised(show(Failed("boom"))), expect(Failed("boom"), success))
    }
-   "message" should "rewrite any failure to Failed with the new message" in pure {
+   "message" should "rewrite any failure to Failed with the new message" in {
       expect(Failed("values differ"), "a" shouldBe "b" message "values differ")
    }
-   "message" should "leave a passing body passing" in pure {
+   "message" should "leave a passing body passing" in {
       "a" shouldBe "a" message "should not surface"
    }
 }

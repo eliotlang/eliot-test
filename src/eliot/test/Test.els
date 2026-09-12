@@ -1,17 +1,16 @@
-import eliot.carrier.Effect
 import eliot.collection.List
 import eliot.test.Assertion
 
 /**
  * What a test case is *about*: the `subject` under test and the `should` phrase naming the expectation. It carries no
- * body — a case's body is run by `in`, on the suite's own carrier, so what the framework ever holds is the case's name
- * and what running it answered.
+ * body — a case's body is run by `in`, where it is written, so what the framework ever holds is the case's name and
+ * what running it answered.
  */
 data TestCase(subject: String, shouldPhrase: String)
 
 /**
- * A test case together with the verdict of running it. Plain data throughout: nothing here is a suspended computation,
- * so the type commits to no carrier and the runner has nothing left to discharge.
+ * A test case together with the verdict of running it. Plain data throughout: nothing here is a suspended
+ * computation, so the runner has nothing left to discharge beyond the suite's own `Writer`.
  */
 data TestResult(testCase: TestCase, outcome: Outcome)
 
@@ -19,6 +18,26 @@ data TestResult(testCase: TestCase, outcome: Outcome)
  * What running one test body answered: the `AssertionError` it raised, or `unit` when it raised nothing.
  */
 type Outcome = Either[AssertionError, Unit]
+
+/**
+ * **What a suite is**: a computation that registers its cases' verdicts, and nothing else. A suite is declared
+ * `def testCases: Test = { … }`, and that is the whole of it — the row a suite has to perform is named here once
+ * rather than written out at every suite.
+ *
+ * `Test` is a **row alias**: it lowers to `type Test = Unit`, and what crosses a use of it is the row's entries, so a
+ * definition returning `Test` receives exactly what `{Writer[List[TestResult]]} Unit` would. Being a row alias it
+ * also **composes** with a written-out row, which is how a suite says its cases may perform more than registration:
+ *
+ * ```eliot
+ * def testCases: Test = { … }                    -- cases that assert and nothing else
+ * def testCases: {Console} Test = { … }          -- cases that may print, for real
+ * ```
+ *
+ * A row alias is a name like any other, so it crosses files, honours import scope, and is shadowed by a local
+ * declaration of the same name. It works in **return position** only — `in`'s body slot below still writes its row
+ * out, because a parameter row is *supplied* rather than received.
+ */
+type Test = {Writer[List[TestResult]]} Unit
 
 /**
  * Name a test case: the `subject` under test and the `should` phrase naming the expectation. The case is not complete
@@ -30,17 +49,14 @@ infix none def should(subject: String, shouldPhrase: String): TestCase =
 /**
  * Run a named case's body and register its verdict into the enclosing suite.
  *
- * `in` discharges the **assertion** effect and is transparent to every other effect the body performs: the body's row
- * is pinned only at `Throw[AssertionError]`, over the suite's own carrier `G`, so what a test may do is decided by the
- * suite's declared row and by nothing here. A suite declaring `{Writer[List[TestResult]]}` alone admits only bodies
- * that assert; one that also declares `{Console}` admits bodies that print, on whatever carrier the runner is compiled
- * to. Wrap a body in `pure` to forbid all effects regardless of what the suite allows.
+ * `in` **supplies the assertion effect and nothing else**: its body slot declares `{Throw[AssertionError]}`, an entry
+ * `in`'s own row lacks, so it is discharged here — per case, which is what makes a failing assertion stop that case
+ * and no other. Every *other* effect the body performs is charged outward to the suite, so what a test may do is
+ * decided by the suite's declared row and by nothing here: a bare `Test` suite admits only bodies that assert, a
+ * `{Console} Test` suite admits bodies that print, and a body may bind its own doubles with `with`.
  *
- * Because the body is a *slot* rather than stored data, it is written where it stands — no test is collected unrun.
+ * Because the body is a *slot* rather than stored data, it is run where it stands — no case is ever collected unrun.
  */
 infix none below should
-def in[G[_] ~ Writer[List[TestResult]] & Effect](testCase: TestCase, body: {Throw[AssertionError] | G} Unit): G[Unit] = {
-   val outcome = runThrow(body)
-
-   tell(singleton(TestResult(testCase, outcome)))
-}
+def in(testCase: TestCase, body: {Throw[AssertionError]} Unit): Test =
+   tell(singleton(TestResult(testCase, runThrow(body))))

@@ -1,102 +1,93 @@
-import eliot.carrier.Effect
 import eliot.collection.List
 import eliot.test.Assertion
-import eliot.test.Test
 
 /**
- * A **pure carrier standing in for the console**, and the two discharge words that run a test body on it — the worked
- * example of what "the carrier is the injection point" costs a test author: one `data`, one `Effect` instance, one
- * instance per faked ability, and one word answering `Outcome`.
+ * **Test doubles for the console**, and the two words that run a test body against them — the worked example of what
+ * "a named implementation is the injection point" costs a test author.
  *
- * `Recorded` threads a `Session` — the input still to be read, and everything written so far — and short-circuits on a
- * raised `AssertionError`. It has **no `Suspend` instance**, and `Suspend` is the only route to a native side effect,
- * so a body running here is structurally incapable of touching the real console. That is also what picks the fake:
- * the jvm layer's real `Console` is `implement[F[_] ~ Suspend] Console[F]`, whose constraint `Recorded` fails, so it
- * declines and the instance below is the unique survivor. Nothing is registered, injected or configured.
+ * There is nothing to instantiate here: a double is **one declaration**, never searched for and never
+ * checked against the platform's default, so it may freely overlap one. What the doubles need at runtime they ask an
+ * *effect* for — `State[Session]`, threading the input still to be read and everything written so far — and that entry
+ * is charged where the doubles are bound, which is the slot of `onConsole` below, and discharged there.
+ *
+ * A double **cannot cheat**: a user module declares no natives and the platform's are private to its layer, so an
+ * implementation reaches the world only through the effects its own clauses declare — here one `State`, discharged
+ * before the test ever sees it.
  */
 
 /**
  * What the fake console holds: the lines `readLine` has yet to hand out, and everything `printLine` has written.
  */
-data Session(pending: List[String], written: String)
+data Session(pending: List[String], transcribed: String)
 
 /**
- * The carrier: a `Session`-threading function answering the outcome so far, so a raised `AssertionError` stops the
- * rest of the body the way a real failure stops a real test.
+ * Reading back what the body has written so far — an effect of the test's own, with no counterpart in production.
+ * This is what a mid-run assertion asserts *on*.
  */
-data Recorded[A](runRecorded: Session => Pair[Either[AssertionError, A], Session])
-
-implement Effect[Recorded] {
-   def pure[A](a: A): Recorded[A] = Recorded(s -> Pair(Right(a), s))
-
-   def flatMap[A, B](f: A => Recorded[B], fa: Recorded[A]): Recorded[B] =
-      Recorded(s -> foldPair(
-         outcome -> s2 -> outcome.foldEither(e -> Pair(Left(e), s2), a -> runRecorded(f(a))(s2)),
-         runRecorded(fa)(s)))
-
-   def map[A, B](f: A => B, fa: Recorded[A]): Recorded[B] =
-      Recorded(s -> foldPair(
-         outcome -> s2 -> Pair(outcome.foldEither(e -> Left(e), a -> Right(f(a))), s2),
-         runRecorded(fa)(s)))
+effect Transcript {
+   def transcript: String
 }
 
 /**
- * The fake interpretation of the standard `Console` effect. Legally colocated with `Recorded` — an instance may live
- * with its ability *or* with one of its type arguments — and confined to this program, since compilation is
- * whole-program monomorphization from `main`.
+ * The fake interpretation of the standard `Console` effect: a **named** implementation, so it is never a default and
+ * the platform's real console is left exactly where it was. Its clauses declare `{State[Session]}` — what this double
+ * needs to do its job — and that is the only way it reaches anything outside itself.
  */
-implement Console[Recorded] {
-   def printLine(line: String): Recorded[Unit] =
-      Recorded(s -> Pair(Right(unit), Session(s.pending, s.written ++ line ++ "\n")))
+implement fakeConsole: Console {
+   def printLine(s: String): {State[Session]} Unit = updateState(session -> appended(session, s))
 
-   def readLine: Recorded[Option[String]] =
-      Recorded(s -> Pair(Right(s.pending.head), Session(s.pending.tail, s.written)))
+   def readLine: {State[Session]} Option[String] = takeLine(state)
 }
 
 /**
- * Assertions on this carrier. This one instance is what lets a test body **interleave** effects and assertions:
- * `Throw[AssertionError]` rides `Recorded` itself rather than a `ThrowCarrier` stacked over it, so no cross-lift is
- * needed and no row has to be pinned. Raising records the error and every later step is skipped by `flatMap`.
+ * The fake's own effect, over the same `Session`.
  */
-implement Throw[AssertionError, Recorded] {
-   def raise[A](err: AssertionError): Recorded[A] = Recorded(s -> Pair(Left(err), s))
+implement fakeTranscript: Transcript {
+   def transcript: {State[Session]} String = transcribed(state)
 }
 
 /**
- * Reading back what the body has written so far — an ability of the fake, with no counterpart in production. This is
- * what a mid-run assertion asserts *on*.
- */
-ability Transcript[F[_]] {
-   def transcript: {Transcript} String
-}
-
-implement Transcript[Recorded] {
-   def transcript: Recorded[String] = Recorded(s -> Pair(Right(s.written), s))
-}
-
-/**
- * The **discharge word** for a body that may use the console and assert as it goes: `"…" should "…" in onConsole(…)`.
+ * The **discharge word** for a body that uses the console and asserts as it goes:
+ * `"…" should "…" in onConsole { … }`.
  *
- * It is `pure`'s counterpart for this carrier and stands in exactly the same place — it answers the assertion effect,
- * so `in` cannot tell the two apart and the case reads as one word. `input` is what `readLine` will hand out, in
- * order.
- *
- * The slot is the **capture tag** `{| Recorded} Unit` — the pinned row at zero entries, which is the same type as
- * `Recorded[Unit]` but declares that the slot hosts a computation on that carrier. That is what lets the body be
- * written inline at the `in` site, inside the suite's own region, instead of needing a definition with no ambient
- * carrier of its own.
+ * The seam is the slot's *type*: `with fakeConsole with fakeTranscript` binds the calls the caller writes there, and
+ * the caller writes nothing. `Console` and `Transcript` are entries this definition's own row does not name, so the
+ * slot supplies them; the `State[Session]` the doubles perform is supplied in turn by `runStateToValue`, and what is
+ * left over — the case's assertions — rides outward into `{Throw[AssertionError]}`, exactly where `in` will discharge
+ * it.
  */
-def onConsole(body: {| Recorded} Unit): {Throw[AssertionError]} Unit = onConsoleReading(empty, body)
+def onConsole(body: {Console, Transcript} Unit with fakeConsole with fakeTranscript): {Throw[AssertionError]} Unit =
+   runStateToValue(Session(empty, ""), body)
 
 /**
  * `onConsole` for a body that reads: `input` is what `readLine` will hand out, in order.
  */
-def onConsoleReading(input: List[String], body: {| Recorded} Unit): {Throw[AssertionError]} Unit =
-   orRaise(first(runRecorded(body)(Session(input, ""))))
+def onConsoleReading(
+      input: List[String],
+      body: {Console, Transcript} Unit with fakeConsole with fakeTranscript): {Throw[AssertionError]} Unit =
+   runStateToValue(Session(input, ""), body)
 
 /**
- * Running effectful production code and answering what it wrote, for a **run-then-assert** test: the run happens here,
- * where there is no ambient carrier to write the callee at, and the assertion happens in an ordinary `pure` body.
+ * What a `{Console}` program wrote, with no console involved — for a **run-then-assert** test. Nothing has to be
+ * instantiated, so this may be written anywhere, an effectful body included; it stays a separate word only because an
+ * assertion about a finished transcript reads better than one threaded through the run.
  */
-def transcriptOf(input: List[String], program: {| Recorded} Unit): String =
-   written(second(runRecorded(program)(Session(input, ""))))
+def transcriptOf(input: List[String], program: {Console} Unit with fakeConsole): String =
+   transcribed(runStateToFinalState(Session(input, ""), program))
+
+/**
+ * `private` because it is `fakeConsole`'s way of advancing the session, not an operation of its own: hand out the next
+ * pending line, keeping everything written.
+ */
+private def takeLine(session: Session): {State[Session]} Option[String] = {
+   putState(Session(session.pending.tail, session.transcribed))
+
+   session.pending.head
+}
+
+/**
+ * `private` because it is `printLine`'s half of the same: everything written so far, with `line` and its separator
+ * appended.
+ */
+private def appended(session: Session, line: String): Session =
+   Session(session.pending, session.transcribed ++ line ++ "\n")
