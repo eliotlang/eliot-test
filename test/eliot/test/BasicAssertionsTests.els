@@ -4,7 +4,7 @@ import eliot.test.Test
 
 // The suite declares its own row, and this one grants nothing but registration — so every case here can assert
 // and do nothing else: what a body may perform is exactly what the suite declares.
-def testCases: {Writer[List[TestResult]]} Unit = {
+def testCases: Test = {
    "shouldBe" should "pass when given two equal strings" in {
       "hello" shouldBe "hello"
    }

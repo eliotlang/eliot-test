@@ -13,7 +13,7 @@ import eliot.test.example.Greeter
  * row (which admits `{Console}`) and by `mocked` where a case wants doubles. **No implementation is named anywhere
  * here, and no fixture is written** — the doubles are the framework's, bound by `mocked`'s own slot.
  */
-def testCases: {Writer[List[TestResult]], Console} Unit = {
+def testCases: {Console} Test = {
    // --- 1. a unit test over pure logic ----------------------------------------------------------------------------
    "greeting" should "address the name it was given" in {
       greeting("Bob") shouldBe "Hello, Bob!"

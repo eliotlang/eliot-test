@@ -12,7 +12,7 @@ import eliot.test.Mock
  * failing direction is checked with `raising`, which is how a mocked body expects a raise — including one
  * from an assertion, since an assertion is a raise like any other here.
  */
-def testCases: {Writer[List[TestResult]]} Unit = {
+def testCases: Test = {
    "calls" should "answer every call in order, joined" in mocked {
       printLine("one")
       printLine("two")

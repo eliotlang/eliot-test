@@ -296,4 +296,8 @@ rather than a constraint, and that is a better reason.
   Making it expressible again would be a **language** addition, and is not planned.
 - §6's third bullet — *"a carrier-headed slot double-wraps when written inside the mocked region"* — has no
   subject. There is no region and no wrapping.
+- A suite now declares **`type Test`**, a row alias for `{Writer[List[TestResult]]} Unit`, so §3.2's
+  `def testCases: {Writer[List[TestResult]]} Unit` is written `def testCases: Test` today, and a suite whose
+  cases print is `{Console} Test` — a return-position alias composes with a written-out row. The mocked cases
+  themselves are unaffected: `mocked` supplies everything its body performs, so a mocked suite is a bare `Test`.
 

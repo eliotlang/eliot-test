@@ -12,7 +12,7 @@ import eliot.test.Mock
  * Nothing here spawns anything: `mocked` binds `Process` to the double by name, and the platform's own
  * implementation is never consulted.
  */
-def testCases: {Writer[List[TestResult]]} Unit = {
+def testCases: Test = {
    "run" should "answer what the matching arrangement says" in mocked {
       whenSpawning("ls-remote", succeeding("v1.0\nv1.1"))
 

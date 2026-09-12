@@ -6,7 +6,7 @@ import eliot.test.Mock
 /**
  * The console and log doubles: what they record, and what they answer.
  */
-def testCases: {Writer[List[TestResult]]} Unit = {
+def testCases: Test = {
    "printLine" should "record what was printed" in mocked {
       printLine("hello")
 

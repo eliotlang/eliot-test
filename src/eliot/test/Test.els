@@ -20,6 +20,26 @@ data TestResult(testCase: TestCase, outcome: Outcome)
 type Outcome = Either[AssertionError, Unit]
 
 /**
+ * **What a suite is**: a computation that registers its cases' verdicts, and nothing else. A suite is declared
+ * `def testCases: Test = { … }`, and that is the whole of it — the row a suite has to perform is named here once
+ * rather than written out at every suite.
+ *
+ * `Test` is a **row alias**: it lowers to `type Test = Unit`, and what crosses a use of it is the row's entries, so a
+ * definition returning `Test` receives exactly what `{Writer[List[TestResult]]} Unit` would. Being a row alias it
+ * also **composes** with a written-out row, which is how a suite says its cases may perform more than registration:
+ *
+ * ```eliot
+ * def testCases: Test = { … }                    -- cases that assert and nothing else
+ * def testCases: {Console} Test = { … }          -- cases that may print, for real
+ * ```
+ *
+ * A row alias is a name like any other, so it crosses files, honours import scope, and is shadowed by a local
+ * declaration of the same name. It works in **return position** only — `in`'s body slot below still writes its row
+ * out, because a parameter row is *supplied* rather than received.
+ */
+type Test = {Writer[List[TestResult]]} Unit
+
+/**
  * Name a test case: the `subject` under test and the `should` phrase naming the expectation. The case is not complete
  * until `in` gives it a body.
  */
@@ -32,11 +52,11 @@ infix none def should(subject: String, shouldPhrase: String): TestCase =
  * `in` **supplies** the assertion effect and is transparent to every other effect the body performs: `{Throw[AssertionError]}`
  * on the slot is the one entry `in` discharges, and every other operation the body performs is bound where it is
  * written — by the suite's own declarations, or by a `with` the body itself carries. So what a test may do is decided
- * by the suite's declared row and by nothing here: a suite declaring `{Writer[List[TestResult]]}` alone admits only
- * bodies that assert; one that also declares `{Console}` admits bodies that print.
+ * by the suite's declared row and by nothing here: a bare `Test` suite admits only bodies that assert, a
+ * `{Console} Test` suite admits bodies that print, and a body may bind its own doubles with `with`.
  *
  * Because the body is a *slot* rather than stored data, it is written where it stands — no test is collected unrun.
  */
 infix none below should
-def in(testCase: TestCase, body: {Throw[AssertionError]} Unit): {Writer[List[TestResult]]} Unit =
+def in(testCase: TestCase, body: {Throw[AssertionError]} Unit): Test =
    tell(singleton(TestResult(testCase, runThrow(body))))

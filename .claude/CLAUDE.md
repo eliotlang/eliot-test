@@ -31,12 +31,26 @@ three tiny modules plus the mocking library and a self-test:
   TestResult(testCase: TestCase, outcome: Outcome)`. **Nothing here stores a computation**, so the
   framework holds verdicts, not suspended work.
 
-  A **suite** is a `Writer` computation that *accumulates* a `List[TestResult]` log, and it declares its own
-  effect row: `{Writer[List[TestResult]]} Unit` for a suite whose tests perform nothing, `{Writer[List[TestResult]],
-  Console} Unit` for one whose tests may print. It is a `Writer`, not `State`, because a suite only ever *appends*
-  cases and never reads back what has been registered — the honest, minimal contract for a collector (`Writer` =
-  append-only `State`; the log's monoid is `Combine[List]` = concatenation). The row is the suite's own statement
-  of what its tests are allowed to do.
+  **`type Test = {Writer[List[TestResult]]} Unit` is what a suite is**, and naming it is the whole of what a
+  suite declares:
+
+  ```eliot
+  def testCases: Test = { … }                    -- cases that assert and nothing else
+  def testCases: {Console} Test = { … }          -- cases that may print, for real
+  ```
+
+  `Test` is a **row alias** — a type alias whose body is a row. It lowers to `type Test = Unit` (a row is
+  declaration metadata, never a type), and what crosses a use of it is the row's *entries*: a definition returning
+  `Test` receives exactly what `{Writer[List[TestResult]]} Unit` would — the same declared row, the same "performs
+  but does not declare" check. Being an ordinary name it crosses files, honours import scope and is shadowed by a
+  local declaration; being a *return*-position alias it **composes** with a written-out row, which is how a suite
+  widens what its cases may do. It works in return position **only**, which is why `in`'s and `runSuite`'s body
+  slots still write `{Writer[List[TestResult]]} Unit` out longhand — a parameter row is *supplied* rather than
+  received.
+
+  A suite is a `Writer` computation that *accumulates* a `List[TestResult]` log. It is a `Writer`, not `State`,
+  because a suite only ever *appends* cases and never reads back what has been registered — the honest, minimal
+  contract for a collector (`Writer` = append-only `State`; the log's monoid is `Combine[List]` = concatenation).
 
   Two infix combinators build a suite in direct style:
   - `"what" should "acceptance"` → a `TestCase` (`infix none def should`). Naming a case is its own record, so
@@ -48,23 +62,24 @@ three tiny modules plus the mocking library and a self-test:
   **`in` supplies the assertion effect and nothing else**, and it is one line:
 
   ```eliot
-  def in(testCase: TestCase, body: {Throw[AssertionError]} Unit): {Writer[List[TestResult]]} Unit =
+  def in(testCase: TestCase, body: {Throw[AssertionError]} Unit): Test =
      tell(singleton(TestResult(testCase, runThrow(body))))
   ```
 
   `{Throw[AssertionError]}` on the slot is the one entry `in` *supplies*, so it is discharged per case — a
   failing assertion stops that case and no other. Every other operation the body performs is bound where it is
   written: by the suite's own declarations, or by a `with` the body itself carries. So what a test may do is
-  decided by the suite's row and by nothing in `in`. The body is a *slot*, not stored data, so no test is ever
-  collected unrun.
+  decided by the suite's return type and by nothing in `in`. The body is a *slot*, not stored data, so no test is
+  ever collected unrun.
 
   Three things then decide what a case may do, and they compose freely in one suite:
-  - the **suite's row** — the default; `in { printLine(…); … shouldBe … }` performs for real where the row says
-    `{Console}`, written inline with no definition of its own;
+  - the **suite's return type** — the default; a bare `Test` admits assertions alone, `{Console} Test` admits
+    `in { printLine(…); … shouldBe … }` performing for real, written inline with no definition of its own;
   - **`in mocked { … }`** — runs the case against `eliot.test.Mock`'s doubles for the base effects, with no
     fixture of any kind (see "Mocking");
-  - **an author's own word** — `in onTerminal { … }` runs the body with the author's own named implementation
-    bound, which is what a project's *own* effect needs (see "Testing effectful code").
+  - **an author's own word** — a def of the author's own, binding their own named implementation on its body
+    slot, which is what a project's *own* effect needs (see "Testing effectful code"). The framework's `mocked`
+    is this shape; nothing in this repo needs a second one, so there is no worked example of it here.
 
 - `eliot.test.Assertion` — `data AssertionError = Failed | NotEqual | UnexpectedlyEqual | NoErrorRaised`, a sum
   of *failure shapes* carrying the already-rendered values (assertions `show` at the raise site, where the
@@ -107,8 +122,9 @@ three tiny modules plus the mocking library and a self-test:
   `runSuite` receives each suite as a computation in a slot it **declares** —
   `suite: {Writer[List[TestResult]]} Unit` — and the suites after it as `rest: {} List[List[String]]`, still
   unrun. The slot supplies only `Writer`, the one effect `runSuite` discharges; every other effect a suite
-  performs was bound where the suite was written. So suites run in gathered order and each one's own output
-  precedes its own report.
+  performs was bound where the suite was written. It writes the row out rather than naming `Test`, because a row
+  alias works in return position only. So suites run in gathered order and each one's own output precedes its own
+  report.
 
   The reporting is a pure-then-print split, and deliberately so: **the runner discharges nothing beyond the
   suite's `Writer`** — each body ran at its `in`, so `failureLines` merely folds `result.outcome` into that
@@ -130,10 +146,10 @@ gathered suite is an *argument* of a slot `runSuite` declares, never an element 
 exactly what lets a suite be a computation. `namedValues` remains, as the same fold at the free monoid, for
 gathering plain data.
 
-To add tests, declare `def testCases: {Writer[List[TestResult]]} Unit = { "…" should "…" in { … } … }` in
-any module inside a compiled source root, widening the row to what those tests need — `{Writer[List[TestResult]],
-Console} Unit` to perform console effects for real. `test/eliot/test/BasicAssertionsTests.els` is the worked
-example for plain cases, and `test/eliot/test/example/GreeterTests.els` for the effectful ones. A suite is picked
+To add tests, declare `def testCases: Test = { "…" should "…" in { … } … }` in any module inside a compiled
+source root, widening the row to what those tests need — `{Console} Test` to perform console effects for real.
+`test/eliot/test/BasicAssertionsTests.els` is the worked example for plain cases, and
+`test/eliot/test/example/GreeterTests.els` for the effectful ones. A suite is picked
 up simply by being on the path; nothing references it. Suites are folded in qualified-name order, so a run is
 reproducible. (One `testCases` per module — the reflection gathers one value per module under that name.)
 
@@ -189,11 +205,11 @@ There are three ways to give a case a body, and all three register into the same
 
 ### Real effects, inline — the default
 
-A suite's row says what its tests may do. Declare the effect and write the body inline; the implementation is
-whatever the `Runner` binds at `main`:
+A suite's return type says what its tests may do. Declare the effect and write the body inline; the
+implementation is whatever the `Runner` binds at `main`:
 
 ```eliot
-def testCases: {Writer[List[TestResult]], Console} Unit = {
+def testCases: {Console} Test = {
    "real effects" should "be available to a body whose suite declares them" in {
       printLine(" | (printed by a test performing a real Console effect)")
       success
@@ -202,8 +218,8 @@ def testCases: {Writer[List[TestResult]], Console} Unit = {
 ```
 
 A failed assertion stops **that case** — `in` discharges `Throw[AssertionError]` per case — and the next case
-still runs. A suite that declares only `{Writer[List[TestResult]]}` rejects a body that performs ("This value
-performs the effect 'Console' but does not declare it").
+still runs. A bare `Test` suite rejects a body that performs ("This value performs the effect 'Console' but does
+not declare it").
 
 > **A row cannot be closed.** There is no way to say "this body may perform *nothing*, whatever the suite
 > allows". That is what `in pure { … }` meant, and it is **deleted**: a slot's row says what it *supplies*, not
@@ -214,8 +230,10 @@ performs the effect 'Console' but does not declare it").
 
 Production code that declares `{Console}` can equally run against a double, because **the implementation is the
 injection point**. The test declares its own named `implement`; production code is untouched and names nothing.
-`test/eliot/test/example/` is the worked example: `Greeter` is the application under test and `GreeterTests`
-registers the styles in **one** suite.
+`test/eliot/test/example/` is the worked example of a project's side of that: `Greeter` is the application under
+test and `GreeterTests` registers its pure, mocked and real-effect cases in **one** suite. The `Terminal` sketch
+below is illustrative — for a *base* effect the doubles are already written (see "Mocking"), so nothing in this
+repo needs to declare its own.
 
 ```eliot
 effect Terminal {
@@ -244,8 +262,9 @@ leaves everything else at its default.
 
 ### An author's own word
 
-Give a def a single `{…}`-rowed parameter with the `with` on its slot type and it reads as a bare word with a
-block, the same shape as `mocked`:
+For a project's **own** effect there is no ready double, so the project writes the binding word itself. Give a def
+a single `{…}`-rowed parameter with the `with` on its slot type and it reads as a bare word with a block — the
+shape `mocked` has, and `mocked` is this repo's only instance of it:
 
 ```eliot
 def onTerminal(body: {Terminal, Throw[AssertionError]} Unit with session): {Throw[AssertionError]} Unit = …
@@ -279,8 +298,10 @@ The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, whic
 per test subject with its pass and failure counts, then a closing summary line for the whole run. **96 cases,
 all passing.**
 
-> **Compiler version.** Needs a compiler at or past `32406522` (2026-09-09) — effects v6 plus the fix for an
-> under-applied ability-implementation native, which `MockFileSystemTests`' `listDirectory(…).map(show)` hits.
+> **Compiler version.** Needs a compiler at or past `2c3db71` (2026-09-12) — effects v6, the fix for an
+> under-applied ability-implementation native (`32406522`, which `MockFileSystemTests`' `listDirectory(…).map(show)`
+> hits), and the **row alias reached by ordinary name resolution**, which is what lets `Test` be declared in
+> `eliot.test.Test` and named from a suite in another file.
 
 ## Building and running (compiler CLI)
 

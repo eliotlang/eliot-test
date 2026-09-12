@@ -9,7 +9,7 @@ import eliot.test.Mock
  * The environment double: the arguments, variables and working directory a test arranged, and the honest
  * empties where it arranged none.
  */
-def testCases: {Writer[List[TestResult]]} Unit = {
+def testCases: Test = {
    "arguments" should "answer what the test arranged" in mocked {
       withArguments(append(singleton("build"), "--verbose"))
 

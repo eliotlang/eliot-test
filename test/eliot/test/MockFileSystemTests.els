@@ -12,7 +12,7 @@ import eliot.test.Mock
  * The twelve methods of `FileSystem` are the reason this framework owns the doubles rather than each project
  * writing them: a suite calls three of them and needs all twelve to exist.
  */
-def testCases: {Writer[List[TestResult]]} Unit = {
+def testCases: Test = {
    "readFile" should "answer what the test arranged" in mocked {
       withFile(path("/etc/hosts"), "127.0.0.1 localhost")
 
