@@ -5,44 +5,43 @@ import eliot.test.example.Greeter
 import eliot.test.example.FakeConsole
 
 /**
- * **One suite, four kinds of test.** Pure unit tests that may perform nothing at all, run-then-assert tests over
- * effectful code, tests performing real effects inline, and direct-style tests interleaving *faked* effects with
- * assertions — registered side by side in one `testCases`, reported by the one runner, counted in the one summary.
+ * **One suite, four kinds of test.** Pure unit tests, run-then-assert tests over effectful code, tests performing real
+ * effects inline, and direct-style tests interleaving *faked* effects with assertions — registered side by side in one
+ * `testCases`, reported by the one runner, counted in the one summary.
  *
- * They mix because `in` discharges only the assertion effect: what a body may do is decided by this suite's declared
- * row (which admits `{Console}`), by `pure` where a case opts out of effects entirely, and by the carrier an author's
- * own word names where a case wants a fake. No carrier is named here, and none is pinned.
+ * They mix because `in` supplies only the assertion effect. What a body may otherwise do is decided by this suite's
+ * return type — `{Console} Test`, so a case may print for real — and by the doubles an author's own word binds on its
+ * slot. Nothing here is a fixture, and nothing production-side knows a test exists.
  */
-def testCases: {Writer[List[TestResult]], Console} Unit = {
-   // --- 1. a pure unit test: the body may assert and nothing else --------------------------------------------------
-   // `Id` has no `Suspend`, so a `printLine` in here is a compile error rather than a test that quietly does I/O.
-   "greeting" should "address the name it was given" in pure {
+def testCases: {Console} Test = {
+   // --- 1. plain unit tests: nothing to run, nothing to bind -------------------------------------------------------
+   "greeting" should "address the name it was given" in {
       greeting("Bob") shouldBe "Hello, Bob!"
    }
-   "greeting" should "not be the bare name" in pure {
+   "greeting" should "not be the bare name" in {
       greeting("Bob") shouldNotBe "Bob"
    }
 
    // --- 2. run-then-assert over effectful code --------------------------------------------------------------------
-   // The fake run sits in its own definition below; what reaches the assertion is a plain `String`.
-   "greet" should "greet whoever the console offers" in pure {
-      greetTranscript shouldBe "Hello, Bob!\n"
+   // `transcriptOf`'s slot carries `with fakeConsole`, so the caller binds nothing and what reaches the assertion is
+   // a plain `String`. Nothing has to be instantiated, so the run is written right here.
+   "greet" should "greet whoever the console offers" in {
+      transcriptOf(singleton("Bob"), greet) shouldBe "Hello, Bob!\n"
    }
-   "greet" should "fall back to a stranger on no input" in pure {
-      silentGreetTranscript shouldBe "Hello, stranger!\n"
+   "greet" should "fall back to a stranger on no input" in {
+      transcriptOf(empty, greet) shouldBe "Hello, stranger!\n"
    }
 
    // --- 3. real effects, written inline ----------------------------------------------------------------------------
-   // The suite's row declares `{Console}`, so a body may perform it — on whatever carrier the runner was compiled to.
-   // Nothing here names a carrier, and the body needs no definition of its own.
+   // The suite declares `{Console} Test`, so a body may perform it — bound by whoever ran the runner. Nothing here
+   // names an implementation, and the body needs no definition of its own.
    "real effects" should "be available to a body whose suite declares them" in {
       printLine(" | (this line was printed by a test performing a real Console effect)")
       success
    }
 
-   // --- 3b. `expect` over a body that performs -----------------------------------------------------------------
-   // `expect`'s body row is open, so it supplies one `Throw` layer over the suite's own carrier instead of pinning
-   // the body to `Id`. A body that prints *and* raises is therefore checkable, which a pinned body could never be.
+   // --- 3b. `expect` over a body that performs ----------------------------------------------------------------------
+   // `expect`'s body slot supplies `Throw[E]` and nothing else, so a body that prints *and* raises is checkable.
    "expect" should "wrap a body that performs a real effect while it raises" in {
       expect(Failed("after printing"), {
          printLine(" | (printed by a body wrapped in `expect`)")
@@ -50,9 +49,18 @@ def testCases: {Writer[List[TestResult]], Console} Unit = {
       })
    }
 
-   // --- 4. direct-style over a faked carrier -----------------------------------------------------------------------
+   // --- 3c. `message` over a body that performs ----------------------------------------------------------------------
+   // `message` discharges the very effect it declares — the nearest enclosing frame is its own — so it wraps a body
+   // however that body was written, printing included.
+   "message" should "rewrite a failure raised by a body that performs" in {
+      expect(Failed("printed, then failed"), {
+         printLine(" | (printed by a body wrapped in `message`)")
+         fail("boom")
+      } message "printed, then failed")
+   }
+
+   // --- 4. direct-style over the doubles -----------------------------------------------------------------------------
    // The body performs the faked console and asserts *between* its steps. Same suite, same runner, same summary.
-   // The same, with `readLine` scripted: `onConsoleReading` is `onConsole` for a body that reads.
    "greet" should "read its name from the console it is given" in onConsoleReading(singleton("Ann"), {
       greet
       transcript shouldBe "Hello, Ann!\n"
@@ -65,15 +73,3 @@ def testCases: {Writer[List[TestResult]], Console} Unit = {
       transcript shouldBe "--\nGoodbye, Bob.\nCome back soon!\n"
    }
 }
-
-/**
- * The fake run for the first run-then-assert case. It must be a definition of its own: a region writes every
- * carrier-generic callee at *its* carrier, and the suite above is pinned to the `Writer` stack, so `greet` written
- * there would be written at that stack rather than at `Recorded`.
- */
-private def greetTranscript: String = transcriptOf(singleton("Bob"), greet)
-
-/**
- * The same, with nothing to read: `readLine` answers `None` and `greet`'s own `orElse` supplies the fallback.
- */
-private def silentGreetTranscript: String = transcriptOf(empty, greet)
