@@ -1,0 +1,21 @@
+-- The Eliot test framework as a package. One anonymous module: `src/` is the framework, `test/` is
+-- its own suite, and both sit at the repository root, which is what no `module` clause means.
+--
+-- Both layers of the base are named, because `src` resolves against what it declares and nothing
+-- else: the assertions and the mocks are written over `eliot.collection.List`, `eliot.file` and
+-- `eliot.system`, and the runner reaches every suite in a program through `eliot.compiler.Reflect`,
+-- which the `lang` layer declares rather than `stdlib`.
+--
+-- The platform layer is a test-scope dependency, not a base one: a framework is as
+-- platform-independent as what it tests, and it is only *running* the suite that needs a jvm.
+--
+-- Not here yet: an `artifact` for the runner jar. It would have to name a backend, and a backend is
+-- located among the artifact's dependencies by the `plugin` clause each one ships — which the eliot
+-- repository cannot write until its compiler plugins are published jars with coordinates to pin.
+
+dep github.com/robertbraeutigam/eliot//lang v0.0
+dep github.com/robertbraeutigam/eliot//stdlib v0.0
+
+test {
+  dep github.com/robertbraeutigam/eliot//jvm v0.0
+}
