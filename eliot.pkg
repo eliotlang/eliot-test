@@ -9,13 +9,27 @@
 -- The platform layer is a test-scope dependency, not a base one: a framework is as
 -- platform-independent as what it tests, and it is only *running* the suite that needs a jvm.
 --
--- Not here yet: an `artifact` for the runner jar. It would have to name a backend, and a backend is
--- located among the artifact's dependencies by the `plugin` clause each one ships — which the eliot
--- repository cannot write until its compiler plugins are published jars with coordinates to pin.
+-- The `runner` artifact is the executable this repository ships: `eliot.test.Runner` is a `main` that
+-- reflects over every `testCases` in a program, so a suite is built by pointing this configuration at a
+-- project rather than by anything this package does on its own. It names `//jvm` because a platform
+-- layer is declared per artifact, and it needs no `backend <package>` — `//jvm` is the one plugin in
+-- its closure that registers a command word.
+--
+-- `v0.1` is the floor because that is where the layers' `plugin` clauses start: a tag that declares no
+-- plugin ships no compiler a consumer can find, so `eliot build` against `v0.0` correctly refuses.
+-- Nothing here needs anything newer than `v0.1`'s sources.
 
-dep github.com/robertbraeutigam/eliot//lang v0.0
-dep github.com/robertbraeutigam/eliot//stdlib v0.0
+dep github.com/robertbraeutigam/eliot//lang v0.1
+dep github.com/robertbraeutigam/eliot//stdlib v0.1
+
+artifact runner {
+  dep github.com/robertbraeutigam/eliot//jvm v0.1
+  backend {
+    kind exe-jar
+    main eliot.test.Runner
+  }
+}
 
 test {
-  dep github.com/robertbraeutigam/eliot//jvm v0.0
+  dep github.com/robertbraeutigam/eliot//jvm v0.1
 }
