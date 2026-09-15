@@ -1,19 +1,24 @@
--- The Eliot test framework as a package. One anonymous module: `src/` is the framework, `test/` is
--- its own suite, and both sit at the repository root, which is what no `module` clause means.
+-- The Eliot test framework as a package.
+--
+-- **The root package is the framework and the runner both.** Top-level clauses describe `src/`, and
+-- the `main` among them is `eliot.test.Runner` — a fact about this package, stated by this package,
+-- which is how a consumer's suite gets an entry point without naming anybody's internals. A project
+-- that deps this one and declares no `main` of its own has exactly one in its closure, which is what
+-- makes `eliot build test` work anywhere.
 --
 -- Both layers of the base are named, because `src` resolves against what it declares and nothing
 -- else: the assertions and the mocks are written over `eliot.collection.List`, `eliot.file` and
 -- `eliot.system`, and the runner reaches every suite in a program through `eliot.compiler.Reflect`,
 -- which the `lang` layer declares rather than `stdlib`.
 --
--- The platform layer is a test-scope dependency, not a base one: a framework is as
--- platform-independent as what it tests, and it is only *running* the suite that needs a jvm.
+-- **No platform in the root package**, deliberately and load-bearingly: a framework is as
+-- platform-independent as what it tests, and a consumer inheriting `//jvm` from here could never
+-- build for anything else. `runner` and `test` name it, and nothing depends on either of them.
 --
--- The `runner` artifact is the executable this repository ships: `eliot.test.Runner` is a `main` that
--- reflects over every `testCases` in a program, so a suite is built by pointing this configuration at a
--- project rather than by anything this package does on its own. It names `//jvm` because a platform
--- layer is declared per artifact, and it needs no `backend <package>` — `//jvm` is the one plugin in
--- its closure that registers a command word.
+-- `runner` is the executable this repository ships and declares no `main` of its own — it inherits the
+-- root package's through `dep //root`, because there is one runner and it is the one consumers get.
+-- `test` is this repository's own suite, at `test/src`, and it runs by the same entry point for the
+-- same reason.
 --
 -- `v0.1` is the floor because that is where the layers' `plugin` clauses start: a tag that declares no
 -- plugin ships no compiler a consumer can find, so `eliot build` against `v0.0` correctly refuses.
@@ -21,15 +26,14 @@
 
 dep github.com/robertbraeutigam/eliot//lang v0.1
 dep github.com/robertbraeutigam/eliot//stdlib v0.1
+main eliot.test.Runner
 
-artifact runner {
+package runner {
+  dep //root
   dep github.com/robertbraeutigam/eliot//jvm v0.1
-  backend {
-    kind exe-jar
-    main eliot.test.Runner
-  }
 }
 
-test {
+package test {
+  dep //root
   dep github.com/robertbraeutigam/eliot//jvm v0.1
 }

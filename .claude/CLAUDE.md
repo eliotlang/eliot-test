@@ -148,8 +148,8 @@ gathering plain data.
 
 To add tests, declare `def testCases: Test = { "…" should "…" in { … } … }` in any module inside a compiled
 source root, widening the row to what those tests need — `{Console} Test` to perform console effects for real.
-`test/eliot/test/BasicAssertionsTests.els` is the worked example for plain cases, and
-`test/eliot/test/example/GreeterTests.els` for the effectful ones. A suite is picked
+`test/src/eliot/test/BasicAssertionsTests.els` is the worked example for plain cases, and
+`test/src/eliot/test/example/GreeterTests.els` for the effectful ones. A suite is picked
 up simply by being on the path; nothing references it. Suites are folded in qualified-name order, so a run is
 reproducible. (One `testCases` per module — the reflection gathers one value per module under that name.)
 
@@ -230,7 +230,7 @@ not declare it").
 
 Production code that declares `{Console}` can equally run against a double, because **the implementation is the
 injection point**. The test declares its own named `implement`; production code is untouched and names nothing.
-`test/eliot/test/example/` is the worked example of a project's side of that: `Greeter` is the application under
+`test/src/eliot/test/example/` is the worked example of a project's side of that: `Greeter` is the application under
 test and `GreeterTests` registers its pure, mocked and real-effect cases in **one** suite. The `Terminal` sketch
 below is illustrative — for a *base* effect the doubles are already written (see "Mocking"), so nothing in this
 repo needs to declare its own.
@@ -313,11 +313,24 @@ the compiler plugin assets that tag ships, and runs the compiler over the source
 ```bash
 ./eliotw build test        # target/Runner.jar — this repository's own 96 cases
 java -jar target/Runner.jar
-./eliotw build runner      # the same jar as an artifact: src only, no suites in it
+./eliotw build runner      # the same jar with src only, no suites in it
 ```
 
-`./eliotw resolve test` prints the version selected per package and `./eliotw roots test` the source
-directories, which is what to look at when a build picks something unexpected. `rm -rf target` starts
+**Three packages, no scopes** (2026-09-15). Top-level clauses are the *root package* — `src/`, and the
+`main eliot.test.Runner` that is this framework's statement about itself, which is how a consumer's
+suite gets an entry point without naming anybody's internals. `runner` and `test` each dep `//root`
+and add `//jvm`, and declare no `main` of their own because they inherit the one. The platform layer
+stays out of the root package deliberately: a consumer inheriting `//jvm` from here could never build
+for anything else.
+
+`./eliotw resolve test` prints the version selected per package, `./eliotw roots test` the source
+directories, and `./eliotw roots root` the framework alone as a consumer sees it — which is what to
+look at when a build picks something unexpected.
+
+> **The wrapper is a release behind this file.** The descriptor format changed on 2026-09-15 and only
+> an eliot-build launcher at `v0.2` or later parses a `package` clause. Until `.eliot-version` here
+> points at one, build through the compiler CLI below, or with a launcher built from the eliot-build
+> working tree. `rm -rf target` starts
 over from nothing; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY` points the
 wrapper at a mirror.
 
@@ -336,7 +349,7 @@ roots as positional arguments:
 cd /home/robert/personal/eliot          # the compiler checkout
 ./mill examples.run jvm exe-jar -m eliot.test.Runner \
    /home/robert/personal/eliot-test/src \
-   /home/robert/personal/eliot-test/test \
+   /home/robert/personal/eliot-test/test/src \
    -o /home/robert/personal/eliot-test/target
 java -jar /home/robert/personal/eliot-test/target/Runner.jar   # runs the discovered tests
 ```
