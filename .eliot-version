@@ -1,0 +1,4 @@
+-- The launcher this project builds with, and the only file `eliotw` reads. One line: the tag.
+-- Keeping it out of `eliot.pkg` is what lets the wrapper stay a dumb script — a shell loop over
+-- lines is not a parser, and the wrapper has to work in a checkout no eliot has ever run in.
+v0.1

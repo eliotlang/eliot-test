@@ -303,10 +303,32 @@ all passing.**
 > hits), and the **row alias reached by ordinary name resolution**, which is what lets `Test` be declared in
 > `eliot.test.Test` and named from a suite in another file.
 
-## Building and running (compiler CLI)
+## Building and running
 
-There is no build system in *this* repo. Compilation is driven by a sibling checkout of the Eliot
-compiler (see `eliot.paths` for its location — `/home/robert/personal/eliot`), whose `examples.run`
+`./eliotw build test` is the way in, and it needs nothing installed. The committed wrapper reads
+`.eliot-version`, fetches that launcher release once into `~/.cache/eliot/launcher/<tag>/` and execs
+it; the launcher resolves this repository's `eliot.pkg`, clones and checks out what it selects, fetches
+the compiler plugin assets that tag ships, and runs the compiler over the source roots:
+
+```bash
+./eliotw build test        # target/Runner.jar — this repository's own 96 cases
+java -jar target/Runner.jar
+./eliotw build runner      # the same jar as an artifact: src only, no suites in it
+```
+
+`./eliotw resolve test` prints the version selected per package and `./eliotw roots test` the source
+directories, which is what to look at when a build picks something unexpected. `rm -rf target` starts
+over from nothing; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY` points the
+wrapper at a mirror.
+
+The floor is eliot `v0.1`: that is where the layers' `plugin` clauses start, and a tag declaring no
+plugin ships no compiler the tool can find.
+
+### The compiler CLI, for a change to the compiler itself
+
+The wrapper runs a *published* toolchain, so a change in the compiler checkout is invisible to it.
+Driving the compiler directly is how that gets picked up. Compilation is then driven by a sibling
+checkout of the Eliot compiler (`/home/robert/personal/eliot`), whose `examples.run`
 Mill task auto-appends the `lang`/`stdlib`/`jvm` layer source roots. You pass this project's own
 roots as positional arguments:
 
@@ -328,11 +350,19 @@ Every source root that should contribute tests must be passed. Passing both `src
 framework's own self-tests. A downstream project using this framework passes `src` (the framework)
 plus its own test root instead.
 
-### `eliot.paths` — LSP only
+### `eliot.paths` is gone
 
-`eliot.paths` lists all source roots (this project's `src`/`test` plus the base/stdlib/jvm layer
-roots, and the `compiler`-pool overlays). **Only the IntelliJ LSP reads it** — in the IDE, "Run main"
-on `eliot.test.Runner` builds and runs with no arguments. The compiler CLI ignores `eliot.paths`
-entirely and requires every root as an explicit path argument; the `examples.run` task above supplies
-the layer roots, and you supply `src`/`test`. Keep `eliot.paths` in sync with the CLI invocation if
-you change either.
+It was the stopgap for exactly one thing — telling the IntelliJ LSP where every source root is, in a
+world with no build tool to ask. There is one now: `./eliotw roots test` prints the same list, derived
+from `eliot.pkg` rather than maintained by hand beside it, and a file that has to be kept in sync with
+something that can be computed is a file that is eventually wrong.
+
+The LSP has not learned to ask yet, so until it does it falls back to guessing roots and will not find
+the layers. Regenerating the stopgap is one line if the IDE needs it meanwhile:
+
+```bash
+./eliotw roots test | sed 's/^/runtime /' > eliot.paths
+```
+
+That loses the `compiler` overlay directive, which `eliot roots` deliberately does not print: the
+compile-time overlay is each source root's own sibling and the compiler derives it.
