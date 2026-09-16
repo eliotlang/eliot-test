@@ -335,8 +335,9 @@ look at when a build picks something unexpected.
 over from nothing; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY` points the
 wrapper at a mirror.
 
-The floor is eliot `v0.1`: that is where the layers' `plugin` clauses start, and a tag declaring no
-plugin ships no compiler the tool can find.
+The floor is eliot `v0.3`, the first tag whose descriptor is spelled in `package` blocks — a launcher
+reads one format and no other. (The sources alone would be fine from `v0.1`, where the layers'
+`plugin` clauses start.)
 
 ### The compiler CLI, for a change to the compiler itself
 

@@ -20,23 +20,23 @@
 -- `test` is this repository's own suite, at `test/src`, and it runs by the same entry point for the
 -- same reason.
 --
--- `v0.1` is the floor because that is where the layers' `plugin` clauses start: a tag that declares no
--- plugin ships no compiler a consumer can find, so `eliot build` against `v0.0` correctly refuses.
--- Nothing here needs anything newer than `v0.1`'s sources.
+-- `v0.3` is the floor because it is the first eliot tag whose descriptor is written in the format a
+-- launcher reads today — blocks named `package`, not `module`. The sources need nothing newer than
+-- `v0.1`, where the layers' `plugin` clauses start; the floor is about the descriptor, not the code.
 
 package root {
   at .
-  dep github.com/robertbraeutigam/eliot//lang v0.1
-  dep github.com/robertbraeutigam/eliot//stdlib v0.1
+  dep github.com/robertbraeutigam/eliot//lang v0.3
+  dep github.com/robertbraeutigam/eliot//stdlib v0.3
   main eliot.test.Runner
 }
 
 package runner {
   dep //root
-  dep github.com/robertbraeutigam/eliot//jvm v0.1
+  dep github.com/robertbraeutigam/eliot//jvm v0.3
 }
 
 package test {
   dep //root
-  dep github.com/robertbraeutigam/eliot//jvm v0.1
+  dep github.com/robertbraeutigam/eliot//jvm v0.3
 }
