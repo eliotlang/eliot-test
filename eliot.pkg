@@ -24,6 +24,10 @@
 -- launcher reads today — blocks named `package`, not `module`. The sources need nothing newer than
 -- `v0.1`, where the layers' `plugin` clauses start; the floor is about the descriptor, not the code.
 
+-- The launcher `./eliotw` runs, and the one line of this file the wrapper reads: it greps for the first
+-- line starting `launcher `. The launcher itself accepts the line and ignores it.
+launcher v0.1
+
 package root {
   at .
   dep github.com/robertbraeutigam/eliot//lang v0.3

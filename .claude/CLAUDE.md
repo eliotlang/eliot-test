@@ -306,7 +306,7 @@ all passing.**
 ## Building and running
 
 `./eliotw build test` is the way in, and it needs nothing installed. The committed wrapper reads
-`.eliot-version`, fetches that launcher release once into `~/.cache/eliot/launcher/<tag>/` and execs
+the `launcher <tag>` line of `eliot.pkg`, fetches that launcher release once into `~/.cache/eliot/launcher/<tag>/` and execs
 it; the launcher resolves this repository's `eliot.pkg`, clones and checks out what it selects, fetches
 the compiler plugin assets that tag ships, and runs the compiler over the source roots:
 
@@ -329,8 +329,8 @@ directories, and `./eliotw roots root` the framework alone as a consumer sees it
 look at when a build picks something unexpected.
 
 > **The wrapper is a release behind this file.** The descriptor format changed on 2026-09-15 and only
-> an eliot-build launcher at `v0.2` or later parses a `package` clause. Until `.eliot-version` here
-> points at one, build through the compiler CLI below, or with a launcher built from the eliot-build
+> an eliot-build launcher at `v0.2` or later parses a `package` clause. Until the `launcher` line of `eliot.pkg`
+> points at one (and only a launcher that knows that line reads this file at all), build through the compiler CLI below, or with a launcher built from the eliot-build
 > working tree. `rm -rf target` starts
 over from nothing; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY` points the
 wrapper at a mirror.
