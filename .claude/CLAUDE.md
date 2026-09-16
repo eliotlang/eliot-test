@@ -104,7 +104,9 @@ three tiny modules plus the mocking library and a self-test:
   the nearest enclosing frame is its own, so the body's raise is caught here and the re-raise leaves through
   the enclosing case's frame.
 
-- `eliot.test.Runner` — `def main: {Console} Unit`, the executable entry point.
+- `eliot.test.Runner` — `def main: {Console, Process} Unit`, the executable entry point. It exits 1 when
+  any case failed (`registerExitCode`), so a build running the suite fails with it; `Process` is `main`'s
+  alone, and suites still run under `runSuite`'s `{Console}`.
   `foldNamedValues("testCases", noFailures, runSuite)` gathers every suite (see reflection below); `runSuite`
   discharges the Writer to its accumulated list (`runWriterToLog(suite)`) and **groups it by `subject`**
   (`List.groupBy`, so subjects appear in order of first mention). **One line is printed per subject, not per
@@ -311,30 +313,30 @@ it; the launcher resolves this repository's `eliot.pkg`, clones and checks out w
 the compiler plugin assets that tag ships, and runs the compiler over the source roots:
 
 ```bash
-./eliotw build test        # target/Runner.jar — this repository's own 96 cases
-java -jar target/Runner.jar
-./eliotw build runner      # the same jar with src only, no suites in it
+./eliotw build test        # compiles target/Runner.jar and runs it: this repository's own cases
+./eliotw build runner      # target/Runner.jar with src only, no suites in it, not run
 ```
 
-**Three packages, no scopes, every one written out** (2026-09-15; the root as a block, 2026-09-16).
-`package root { at . … }` is the framework — `src/`, and the `main eliot.test.Runner` that is this
-framework's statement about itself, which is how a consumer's suite gets an entry point without naming
-anybody's internals. `runner` and `test` each dep `//root`
-and add `//jvm`, and declare no `main` of their own because they inherit the one. The platform layer
-stays out of the root package deliberately: a consumer inheriting `//jvm` from here could never build
-for anything else.
+**Four packages, no scopes, no tasks** (2026-09-15; the root as a block and the `compiler` lines,
+2026-09-16). `package root { at . … }` is the framework — `src/` and nothing that runs. **`suite`** is
+`root` plus `compiler run -m eliot.test.Runner`: what a build of any package holding it runs, which is
+"compile with the runner as `main`, then run it and exit with its code". A consumer's test package deps
+`eliot-test//suite` beside its platform and writes no line of its own. The line names no backend — the
+compiler picks the one backend accepting `run` — so it is as platform-independent as the framework.
+`runner` builds the same entry point as a jar (`compiler exe-jar -m eliot.test.Runner`), and `test` is
+this repository's suite, depping `//suite` like everybody's. The line is *not* on `root`, because every
+closure holding a package runs its line and `runner` holds `root`.
 
 `./eliotw resolve test` prints the version selected per package, `./eliotw roots test` the source
 directories, and `./eliotw roots root` the framework alone as a consumer sees it — which is what to
 look at when a build picks something unexpected.
 
-The pinned launcher is `v0.2`, the first that parses `package` blocks and the `launcher` line. `rm -rf target` starts
+The pinned launcher must read `compiler` and `asset` clauses — `v0.3` or later. `rm -rf target` starts
 over from nothing; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY` points the
 wrapper at a mirror.
 
-The floor is eliot `v0.3`, the first tag whose descriptor is spelled in `package` blocks — a launcher
-reads one format and no other. (The sources alone would be fine from `v0.1`, where the layers'
-`plugin` clauses start.)
+The floor is eliot `v0.4`, the first tag with the compiler's `run` mode and a descriptor naming its
+assets with `asset` — a launcher reads one format and no other.
 
 ### The compiler CLI, for a change to the compiler itself
 

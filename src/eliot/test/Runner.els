@@ -2,14 +2,24 @@ import eliot.compiler.Reflect
 import eliot.test.Test
 import eliot.test.Assertion
 import eliot.collection.List
+import eliot.system.Process
 
 /**
  * Runs every test case declared anywhere in the program under the name `testCases`, printing one line per
  * subject with its pass and failure counts, each failure detailed underneath, and closing with one line
  * summarizing the whole run. Point the compiler at the source roots and run this module's `main` to execute
  * the whole suite.
+ *
+ * A run with any failing case exits 1, so whatever ran the suite — a shell, CI, a build whose `compiler run` line
+ * this is — fails with it. `Process` is `main`'s alone: the suites run under `runSuite`'s `{Console}` and cannot
+ * reach it.
  */
-def main: {Console} Unit = printLine(summary(allCaseFailures))
+def main: {Console, Process} Unit = {
+   val failureLines = allCaseFailures
+
+   printLine(summary(failureLines))
+   registerExitCode(fold(failureLines.passedCount == failureLines.size, 0, 1))
+}
 
 /**
  * Every case of every suite in the program, as its failure lines. `foldNamedValues` hands each gathered suite to

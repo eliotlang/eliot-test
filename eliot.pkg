@@ -1,28 +1,29 @@
 -- The Eliot test framework as a package.
 --
--- **The root package is the framework and the runner both.** `root` is `src/`, at `.` because its
--- directory is the repository's own, and the `main` in it is `eliot.test.Runner` — a fact about this
--- package, stated by this package, which is how a consumer's suite gets an entry point without naming
--- anybody's internals. A project that deps this one and declares no `main` of its own has exactly one
--- in its closure, which is what makes `eliot build test` work anywhere.
+-- **The root package is the framework and nothing else**: `src/` at `.`, the assertions, the mocks and
+-- the runner's module, with no platform and no `compiler` line. Both absences are load-bearing. A
+-- framework is as platform-independent as what it tests, and a consumer inheriting `//jvm` from here
+-- could never build for anything else; and a line on `root` would run in every closure holding the
+-- framework, `runner` among them.
 --
--- Both layers of the base are named, because `src` resolves against what it declares and nothing
--- else: the assertions and the mocks are written over `eliot.collection.List`, `eliot.file` and
+-- **`suite` is what a consumer's test package deps.** It is `root` plus the one line that runs a suite:
+-- `compiler run -m eliot.test.Runner` compiles the closure with the runner as its entry point and then
+-- runs it, exiting with its code. It names no backend — the one backend in the consumer's closure that
+-- accepts `run` gets it — so the line stays as platform-independent as the framework. A consumer writes
+-- `dep github.com/eliotlang/eliot-test//suite v0.2` beside its platform and `eliot build test` runs its
+-- cases. `suite` has no sources of its own; its directory does not exist and mounts nothing.
+--
+-- Both layers of the base are named in `root`, because `src` resolves against what it declares and
+-- nothing else: the assertions and the mocks are written over `eliot.collection.List`, `eliot.file` and
 -- `eliot.system`, and the runner reaches every suite in a program through `eliot.compiler.Reflect`,
 -- which the `lang` layer declares rather than `stdlib`.
 --
--- **No platform in the root package**, deliberately and load-bearingly: a framework is as
--- platform-independent as what it tests, and a consumer inheriting `//jvm` from here could never
--- build for anything else. `runner` and `test` name it, and nothing depends on either of them.
+-- `runner` is the executable this repository ships: the same entry point, built rather than run. `test`
+-- is this repository's own suite, at `test/src`, and it runs the way every consumer's does — through
+-- `//suite`.
 --
--- `runner` is the executable this repository ships and declares no `main` of its own — it inherits the
--- root package's through `dep //root`, because there is one runner and it is the one consumers get.
--- `test` is this repository's own suite, at `test/src`, and it runs by the same entry point for the
--- same reason.
---
--- `v0.3` is the floor because it is the first eliot tag whose descriptor is written in the format a
--- launcher reads today — blocks named `package`, not `module`. The sources need nothing newer than
--- `v0.1`, where the layers' `plugin` clauses start; the floor is about the descriptor, not the code.
+-- `v0.4` is the floor because it is the first eliot tag whose compiler has the `run` mode and picks a
+-- backend by it, and whose descriptor names its assets the way a launcher reads today.
 
 -- The launcher `./eliotw` runs, and the one line of this file the wrapper reads: it greps for the first
 -- line starting `launcher `. The launcher itself accepts the line and ignores it.
@@ -30,17 +31,22 @@ launcher v0.2
 
 package root {
   at .
-  dep github.com/robertbraeutigam/eliot//lang v0.3
-  dep github.com/robertbraeutigam/eliot//stdlib v0.3
-  main eliot.test.Runner
+  dep github.com/robertbraeutigam/eliot//lang v0.4
+  dep github.com/robertbraeutigam/eliot//stdlib v0.4
+}
+
+package suite {
+  dep //root
+  compiler run -m eliot.test.Runner
 }
 
 package runner {
   dep //root
-  dep github.com/robertbraeutigam/eliot//jvm v0.3
+  dep github.com/robertbraeutigam/eliot//jvm v0.4
+  compiler exe-jar -m eliot.test.Runner
 }
 
 package test {
-  dep //root
-  dep github.com/robertbraeutigam/eliot//jvm v0.3
+  dep //suite
+  dep github.com/robertbraeutigam/eliot//jvm v0.4
 }
