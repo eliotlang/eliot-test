@@ -328,10 +328,7 @@ for anything else.
 directories, and `./eliotw roots root` the framework alone as a consumer sees it — which is what to
 look at when a build picks something unexpected.
 
-> **The wrapper is a release behind this file.** The descriptor format changed on 2026-09-15 and only
-> an eliot-build launcher at `v0.2` or later parses a `package` clause. Until the `launcher` line of `eliot.pkg`
-> points at one (and only a launcher that knows that line reads this file at all), build through the compiler CLI below, or with a launcher built from the eliot-build
-> working tree. `rm -rf target` starts
+The pinned launcher is `v0.2`, the first that parses `package` blocks and the `launcher` line. `rm -rf target` starts
 over from nothing; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY` points the
 wrapper at a mirror.
 
