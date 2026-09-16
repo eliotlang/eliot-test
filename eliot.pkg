@@ -1,10 +1,10 @@
 -- The Eliot test framework as a package.
 --
--- **The root package is the framework and the runner both.** Top-level clauses describe `src/`, and
--- the `main` among them is `eliot.test.Runner` — a fact about this package, stated by this package,
--- which is how a consumer's suite gets an entry point without naming anybody's internals. A project
--- that deps this one and declares no `main` of its own has exactly one in its closure, which is what
--- makes `eliot build test` work anywhere.
+-- **The root package is the framework and the runner both.** `root` is `src/`, at `.` because its
+-- directory is the repository's own, and the `main` in it is `eliot.test.Runner` — a fact about this
+-- package, stated by this package, which is how a consumer's suite gets an entry point without naming
+-- anybody's internals. A project that deps this one and declares no `main` of its own has exactly one
+-- in its closure, which is what makes `eliot build test` work anywhere.
 --
 -- Both layers of the base are named, because `src` resolves against what it declares and nothing
 -- else: the assertions and the mocks are written over `eliot.collection.List`, `eliot.file` and
@@ -24,9 +24,12 @@
 -- plugin ships no compiler a consumer can find, so `eliot build` against `v0.0` correctly refuses.
 -- Nothing here needs anything newer than `v0.1`'s sources.
 
-dep github.com/robertbraeutigam/eliot//lang v0.1
-dep github.com/robertbraeutigam/eliot//stdlib v0.1
-main eliot.test.Runner
+package root {
+  at .
+  dep github.com/robertbraeutigam/eliot//lang v0.1
+  dep github.com/robertbraeutigam/eliot//stdlib v0.1
+  main eliot.test.Runner
+}
 
 package runner {
   dep //root

@@ -316,9 +316,10 @@ java -jar target/Runner.jar
 ./eliotw build runner      # the same jar with src only, no suites in it
 ```
 
-**Three packages, no scopes** (2026-09-15). Top-level clauses are the *root package* — `src/`, and the
-`main eliot.test.Runner` that is this framework's statement about itself, which is how a consumer's
-suite gets an entry point without naming anybody's internals. `runner` and `test` each dep `//root`
+**Three packages, no scopes, every one written out** (2026-09-15; the root as a block, 2026-09-16).
+`package root { at . … }` is the framework — `src/`, and the `main eliot.test.Runner` that is this
+framework's statement about itself, which is how a consumer's suite gets an entry point without naming
+anybody's internals. `runner` and `test` each dep `//root`
 and add `//jvm`, and declare no `main` of their own because they inherit the one. The platform layer
 stays out of the root package deliberately: a consumer inheriting `//jvm` from here could never build
 for anything else.
