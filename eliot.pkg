@@ -27,7 +27,7 @@
 
 -- The launcher `./eliotw` runs, and the one line of this file the wrapper reads: it greps for the first
 -- line starting `launcher `. The launcher itself accepts the line and ignores it.
-launcher v0.3
+launcher v0.5
 
 package root {
   at .
