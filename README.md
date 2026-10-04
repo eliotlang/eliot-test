@@ -88,7 +88,34 @@ For an effect of your own, write a named implementation in the test module and b
 NO_COLOR=1 ./eliotw test   # the same report without colours
 ```
 
-The run prints one report per suite and a closing summary, and exits 1 if any case failed. A project uses the
+The run prints one report per suite and a closing summary, and exits 1 if any case failed.
+
+### Selecting what runs
+
+The runner takes command-line arguments. A **name** selects the suites whose module is that name or lies below it,
+compared by whole name parts; several names select their union, and no names select everything. An **option**
+starts with `--`:
+
+```
+Runner                                    # every suite
+Runner eliot.test.example                 # every suite in a package
+Runner eliot.test.ReportTests             # one suite, named by its module
+Runner --format=plain eliot.test.example  # options and names mix freely
+```
+
+| Option | Meaning |
+|---|---|
+| `--format=plain`, `--format=colored` | the report's style; wins over `NO_COLOR` |
+| `--format=teamcity` | the report as [TeamCity service messages](https://www.jetbrains.com/help/teamcity/service-messages.html), which an IDE's test runner turns into a results tree; for programs to read, not people |
+
+The runner refuses what it cannot honour rather than reporting a pass: an option it does not understand, or names
+that select no case at all, print a line saying so and exit 2 before or instead of any "all clear".
+
+Arguments reach the runner when it is started as a program, e.g. `java -jar Runner.jar eliot.test.ReportTests`
+over a jar built with `compiler exe-jar -m eliot.test.Runner` (the `runner` package here is that line). `./eliotw`
+takes a package and no arguments, and the compiler's `run` mode does not yet forward any to the program it starts.
+
+A project uses the
 framework by depending on its `suite` package next to its platform:
 
 ```
@@ -107,6 +134,7 @@ package test {
 | `eliot.test.Assertion` | `AssertionError` and the assertion words |
 | `eliot.test.Mock` | the doubles, `mocked`, and the arranging and verifying words |
 | `eliot.test.Report` | the report as plain data: tallies and the lines to print, in colour or plain |
-| `eliot.test.Runner` | `main`: runs every suite and prints its report |
+| `eliot.test.Arguments` | what the runner's command line means: which suites, which style, which options are unknown |
+| `eliot.test.Runner` | `main`: runs the selected suites and prints their reports |
 
 The framework tests itself: `test/src` holds its suites, written with the framework.

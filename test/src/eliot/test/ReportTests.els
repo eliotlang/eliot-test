@@ -4,7 +4,8 @@ import eliot.test.Test
 import eliot.test.Report
 
 /**
- * The report the runner prints, checked in its `Plain` style so the expected lines read as text.
+ * The report the runner prints, checked in its `Plain` style so the expected lines read as text, and in its `Teamcity`
+ * style, whose lines are exactly what an IDE's test runner reads.
  */
 def testCases: Test = {
    "tally" should "count passed and failed cases" in {
@@ -38,6 +39,49 @@ def testCases: Test = {
    }
    "summary" should "be coloured in the Colored style" in {
       summary(Colored, tally(passingResults)) shouldBe "\u001B[1;32m ✔ all clear · 3 passed \u001B[0m"
+   }
+   "summary" should "stay plain text in the Teamcity style" in {
+      summary(Teamcity, tally(mixedResults)) shouldBe " ✗ 1 failed · 2 passed "
+   }
+   "suiteReport" should "open a suite per module and per subject, and a test per case, in the Teamcity style" in {
+      suiteReport(Teamcity, "my.Tests::testCases", passingResults).joined("\n") shouldBe (
+         "##teamcity[testSuiteStarted name='my.Tests']\n" ++
+         "##teamcity[testSuiteStarted name='alpha']\n" ++
+         "##teamcity[testStarted name='one']\n##teamcity[testFinished name='one']\n" ++
+         "##teamcity[testStarted name='two']\n##teamcity[testFinished name='two']\n" ++
+         "##teamcity[testSuiteFinished name='alpha']\n" ++
+         "##teamcity[testSuiteStarted name='beta']\n" ++
+         "##teamcity[testStarted name='three']\n##teamcity[testFinished name='three']\n" ++
+         "##teamcity[testSuiteFinished name='beta']\n" ++
+         "##teamcity[testSuiteFinished name='my.Tests']"
+      )
+   }
+   "suiteReport" should "fail a Teamcity test with the comparison an IDE can diff, and still finish it" in {
+      suiteReport(Teamcity, "my.Tests::testCases", singleton(failing("alpha", "match", NotEqual("1", "2")))).joined("\n") shouldBe (
+         "##teamcity[testSuiteStarted name='my.Tests']\n##teamcity[testSuiteStarted name='alpha']\n" ++
+         "##teamcity[testStarted name='match']\n" ++
+         "##teamcity[testFailed name='match' message='expected 1 but was 2' details='expected 1|nactual   2' expected='1' actual='2']\n" ++
+         "##teamcity[testFinished name='match']\n" ++
+         "##teamcity[testSuiteFinished name='alpha']\n##teamcity[testSuiteFinished name='my.Tests']"
+      )
+   }
+   "suiteReport" should "give a Teamcity failure that is no comparison no expected or actual" in {
+      suiteReport(Teamcity, "my.Tests::testCases", singleton(failing("alpha", "x", Failed("boom")))).joined("\n") shouldBe (
+         "##teamcity[testSuiteStarted name='my.Tests']\n##teamcity[testSuiteStarted name='alpha']\n" ++
+         "##teamcity[testStarted name='x']\n" ++
+         "##teamcity[testFailed name='x' message='boom' details='boom']\n" ++
+         "##teamcity[testFinished name='x']\n" ++
+         "##teamcity[testSuiteFinished name='alpha']\n##teamcity[testSuiteFinished name='my.Tests']"
+      )
+   }
+   "suiteReport" should "escape what the Teamcity protocol reserves in names and messages" in {
+      suiteReport(Teamcity, "my.Tests::testCases", singleton(failing("a", "it's [x]", Failed("a|b")))).joined("\n") shouldBe (
+         "##teamcity[testSuiteStarted name='my.Tests']\n##teamcity[testSuiteStarted name='a']\n" ++
+         "##teamcity[testStarted name='it|'s |[x|]']\n" ++
+         "##teamcity[testFailed name='it|'s |[x|]' message='a||b' details='a||b']\n" ++
+         "##teamcity[testFinished name='it|'s |[x|]']\n" ++
+         "##teamcity[testSuiteFinished name='a']\n##teamcity[testSuiteFinished name='my.Tests']"
+      )
    }
 }
 

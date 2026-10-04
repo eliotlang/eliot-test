@@ -1,0 +1,86 @@
+import eliot.collection.List
+import eliot.test.Assertion
+import eliot.test.Test
+import eliot.test.Report
+import eliot.test.Arguments
+
+/**
+ * What the runner's command line means, checked on lists of words with no suite involved.
+ */
+def testCases: Test = {
+   "namesIn" should "keep the names and drop the options, in the order written" in {
+      namesIn(words("a.B --format=plain c.D")).joined(",") shouldBe "a.B,c.D"
+   }
+   "namesIn" should "be empty for no arguments" in {
+      namesIn(empty).isEmpty.shouldBeTrue
+   }
+   "selects" should "select every suite when no name was given" in {
+      selects(empty, "my.pkg.Tests::testCases").shouldBeTrue
+   }
+   "selects" should "select the suite whose module is the name" in {
+      selects(singleton("my.pkg.Tests"), "my.pkg.Tests::testCases").shouldBeTrue
+   }
+   "selects" should "select the suites below a package name" in {
+      selects(singleton("my.pkg"), "my.pkg.Tests::testCases").shouldBeTrue
+   }
+   "selects" should "compare whole name parts, not prefixes of them" in {
+      selects(singleton("my.pk"), "my.pkg.Tests::testCases").shouldBeFalse
+   }
+   "selects" should "not select a suite elsewhere" in {
+      selects(singleton("other.Tests"), "my.pkg.Tests::testCases").shouldBeFalse
+   }
+   "selects" should "select the union of several names" in {
+      selects(words("other.Tests my.pkg.Tests"), "my.pkg.Tests::testCases").shouldBeTrue
+   }
+   "styleOf" should "fall back when no format was chosen" in {
+      isPlain(styleOf(words("a.B"), Colored)).shouldBeFalse
+   }
+   "styleOf" should "let --format=plain override a coloured fallback" in {
+      isPlain(styleOf(words("--format=plain"), Colored)).shouldBeTrue
+   }
+   "styleOf" should "let --format=colored override a plain fallback" in {
+      isPlain(styleOf(words("--format=colored"), Plain)).shouldBeFalse
+   }
+   "styleOf" should "let --format=teamcity override a coloured fallback" in {
+      isTeamcity(styleOf(words("--format=teamcity"), Colored)).shouldBeTrue
+   }
+   "styleOf" should "let the first format win" in {
+      isPlain(styleOf(words("--format=plain --format=colored"), Colored)).shouldBeTrue
+   }
+   "nothingMatched" should "hold when names were given and no case ran" in {
+      nothingMatched(singleton("a.B"), tally(empty)).shouldBeTrue
+   }
+   "nothingMatched" should "not hold when a case ran" in {
+      nothingMatched(singleton("a.B"), Tally(1, 0)).shouldBeFalse
+   }
+   "nothingMatched" should "not hold when only failures ran" in {
+      nothingMatched(singleton("a.B"), Tally(0, 1)).shouldBeFalse
+   }
+   "nothingMatched" should "not hold when no names were given" in {
+      nothingMatched(empty, tally(empty)).shouldBeFalse
+   }
+   "unknownOptions" should "accept the formats and names" in {
+      unknownOptions(words("--format=plain a.B")).isEmpty.shouldBeTrue
+   }
+   "unknownOptions" should "report an unrecognised option" in {
+      unknownOptions(words("a.B --only")).joined(",") shouldBe "--only"
+   }
+   "unknownOptions" should "accept the teamcity format" in {
+      unknownOptions(words("--format=teamcity")).isEmpty.shouldBeTrue
+   }
+   "unknownOptions" should "report an unrecognised format value" in {
+      unknownOptions(words("--format=html")).joined(",") shouldBe "--format=html"
+   }
+}
+
+private def isPlain(style: Style): Bool = style match {
+   case Plain    -> true
+   case Colored  -> false
+   case Teamcity -> false
+}
+
+private def isTeamcity(style: Style): Bool = style match {
+   case Teamcity -> true
+   case Plain    -> false
+   case Colored  -> false
+}
