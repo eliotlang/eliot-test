@@ -106,6 +106,7 @@ Runner --format=plain eliot.test.example  # options and names mix freely
 | Option | Meaning |
 |---|---|
 | `--format=plain`, `--format=colored` | the report's style; wins over `NO_COLOR` |
+| `--format=teamcity` | the report as [TeamCity service messages](https://www.jetbrains.com/help/teamcity/service-messages.html), which an IDE's test runner turns into a results tree; for programs to read, not people |
 
 The runner refuses what it cannot honour rather than reporting a pass: an option it does not understand, or names
 that select no case at all, print a line saying so and exit 2 before or instead of any "all clear".

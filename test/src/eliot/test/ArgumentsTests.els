@@ -41,6 +41,9 @@ def testCases: Test = {
    "styleOf" should "let --format=colored override a plain fallback" in {
       isPlain(styleOf(words("--format=colored"), Plain)).shouldBeFalse
    }
+   "styleOf" should "let --format=teamcity override a coloured fallback" in {
+      isTeamcity(styleOf(words("--format=teamcity"), Colored)).shouldBeTrue
+   }
    "styleOf" should "let the first format win" in {
       isPlain(styleOf(words("--format=plain --format=colored"), Colored)).shouldBeTrue
    }
@@ -62,12 +65,22 @@ def testCases: Test = {
    "unknownOptions" should "report an unrecognised option" in {
       unknownOptions(words("a.B --only")).joined(",") shouldBe "--only"
    }
+   "unknownOptions" should "accept the teamcity format" in {
+      unknownOptions(words("--format=teamcity")).isEmpty.shouldBeTrue
+   }
    "unknownOptions" should "report an unrecognised format value" in {
-      unknownOptions(words("--format=teamcity")).joined(",") shouldBe "--format=teamcity"
+      unknownOptions(words("--format=html")).joined(",") shouldBe "--format=html"
    }
 }
 
 private def isPlain(style: Style): Bool = style match {
-   case Plain   -> true
-   case Colored -> false
+   case Plain    -> true
+   case Colored  -> false
+   case Teamcity -> false
+}
+
+private def isTeamcity(style: Style): Bool = style match {
+   case Teamcity -> true
+   case Plain    -> false
+   case Colored  -> false
 }

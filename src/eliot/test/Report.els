@@ -3,10 +3,12 @@ import eliot.test.Test
 import eliot.test.Assertion
 
 /**
- * How the report is printed: with ANSI colours for a terminal, or `Plain` text for logs and for anyone who set
- * `NO_COLOR`.
+ * How the report is printed: with ANSI colours for a terminal, `Plain` text for logs and for anyone who set
+ * `NO_COLOR`, or as `Teamcity` service messages, the line-based protocol an IDE's test runner reads to build its results
+ * tree (`##teamcity[testStarted name='…']`). `Teamcity` is for a program to read, not a person: it carries no colour and
+ * leaves the closing summary as plain text.
  */
-data Style = Colored | Plain
+data Style = Colored | Plain | Teamcity
 
 /**
  * How many cases passed and how many failed.
@@ -38,12 +40,27 @@ def allPassed(counts: Tally): Bool = counts.failedCount == 0
  *
  * `suiteName` is the qualified name the runner gathered the suite under, `eliot.test.example.GreeterTests::testCases`;
  * subjects are listed in the order they first appear.
+ *
+ * In the `Teamcity` style it is the same structure as service messages instead — the module is a test suite, each
+ * subject a suite inside it and each case a test, named by its `should` phrase:
+ *
+ * ```
+ * ##teamcity[testSuiteStarted name='eliot.test.example.GreeterTests']
+ * ##teamcity[testSuiteStarted name='greet']
+ * ##teamcity[testStarted name='fall back to a stranger on no input']
+ * ##teamcity[testFailed name='fall back to a stranger on no input' message='expected Hello, stranger! but was Hello, !' details='expected Hello, stranger!|nactual   Hello, !' expected='Hello, stranger!' actual='Hello, !']
+ * ##teamcity[testFinished name='fall back to a stranger on no input']
+ * ##teamcity[testSuiteFinished name='greet']
+ * ##teamcity[testSuiteFinished name='eliot.test.example.GreeterTests']
+ * ```
+ *
+ * A failed `NotEqual` carries its `expected` and `actual` as attributes, which is what lets an IDE offer a comparison.
  */
-def suiteReport(style: Style, suiteName: String, results: List[TestResult]): List[String] =
-   prepend(
-      results.groupBy(subjectOf).flatMap(group -> subjectReport(style, group.first, group.second)),
-      suiteName.before("::").dimmed(style)
-   )
+def suiteReport(style: Style, suiteName: String, results: List[TestResult]): List[String] = style match {
+   case Teamcity -> teamcityReport(suiteName, results)
+   case Colored  -> textReport(style, suiteName, results)
+   case Plain    -> textReport(style, suiteName, results)
+}
 
 /**
  * The closing line of the whole run, worth reading when the report scrolled past: "all clear" while every case
@@ -57,6 +74,90 @@ def summary(style: Style, counts: Tally): String =
    }
 
 private def subjectOf(result: TestResult): String = result.testCase.subject
+
+private def textReport(style: Style, suiteName: String, results: List[TestResult]): List[String] =
+   prepend(
+      results.groupBy(subjectOf).flatMap(group -> subjectReport(style, group.first, group.second)),
+      suiteName.before("::").dimmed(style)
+   )
+
+/**
+ * One suite as service messages: the module opens and closes a suite around one suite per subject.
+ */
+private def teamcityReport(suiteName: String, results: List[TestResult]): List[String] = {
+   val moduleName = suiteName.before("::")
+   val subjects = results.groupBy(subjectOf).flatMap(group -> teamcitySubject(group.first, group.second))
+
+   prepend(append(subjects, serviceMessage("testSuiteFinished", moduleName, "")), serviceMessage("testSuiteStarted", moduleName, ""))
+}
+
+private def teamcitySubject(subject: String, results: List[TestResult]): List[String] =
+   prepend(
+      append(results.flatMap(teamcityCase), serviceMessage("testSuiteFinished", subject, "")),
+      serviceMessage("testSuiteStarted", subject, "")
+   )
+
+/**
+ * One case: started, its failure if it failed, finished. A failed case is still finished, which is how the protocol
+ * says the test ran and did not pass.
+ */
+private def teamcityCase(result: TestResult): List[String] = {
+   val name = result.testCase.shouldPhrase
+
+   prepend(
+      append(teamcityFailure(name, result.outcome), serviceMessage("testFinished", name, "")),
+      serviceMessage("testStarted", name, "")
+   )
+}
+
+private def teamcityFailure(name: String, outcome: Outcome): List[String] = outcome match {
+   case Passed            -> empty
+   case FailedWith(error) -> singleton(
+      serviceMessage(
+         "testFailed",
+         name,
+         attribute("message", failureMessage(error)) ++ attribute("details", describe(Plain, error).joined("\n")) ++ comparison(error)
+      )
+   )
+}
+
+/**
+ * The one line saying what went wrong, for the place an IDE shows a failure in a single row.
+ */
+private def failureMessage(error: AssertionError): String = error match {
+   case Failed(reason)             -> reason
+   case NotEqual(expected, actual) -> "expected " ++ expected ++ " but was " ++ actual
+   case UnexpectedlyEqual(equal)   -> "expected a value different from " ++ equal
+   case NoErrorRaised(expected)    -> "expected error " ++ expected ++ " but no error was raised"
+   case Described(message, cause)  -> message
+}
+
+/**
+ * The `expected` and `actual` attributes of a comparison, which an IDE turns into a diff; nothing for a failure that is
+ * not one.
+ */
+private def comparison(error: AssertionError): String = error match {
+   case NotEqual(expected, actual) -> attribute("expected", expected) ++ attribute("actual", actual)
+   case Failed(_)                  -> ""
+   case UnexpectedlyEqual(_)       -> ""
+   case NoErrorRaised(_)           -> ""
+   case Described(_, _)            -> ""
+}
+
+/**
+ * `##teamcity[kind name='name' attributes]`, `attributes` being already-rendered ` key='value'` pairs.
+ */
+private def serviceMessage(kind: String, name: String, attributes: String): String =
+   "##teamcity[" ++ kind ++ attribute("name", name) ++ attributes ++ "]"
+
+private def attribute(key: String, value: String): String = " " ++ key ++ "='" ++ escaped(value) ++ "'"
+
+/**
+ * `text` escaped for a service message's quoted value: the escape character itself first, then the characters the
+ * protocol reserves.
+ */
+private def escaped(text: String): String =
+   text.replace("|", "||").replace("'", "|'").replace("\n", "|n").replace("\r", "|r").replace("[", "|[").replace("]", "|]")
 
 /**
  * One subject's line, followed by the details of each failed case.
@@ -115,9 +216,10 @@ private def dimmed(style: Style, text: String): String = text.painted(style, "2;
 private def alarming(style: Style, text: String): String = text.painted(style, "1;37;41")
 
 /**
- * `text` wrapped in the ANSI escape sequence selecting `code` and reset after it, or `text` itself when `Plain`.
+ * `text` wrapped in the ANSI escape sequence selecting `code` and reset after it, or `text` itself when `Plain` or `Teamcity`.
  */
 private def painted(style: Style, code: String, text: String): String = style match {
-   case Colored -> "\u001B[" ++ code ++ "m" ++ text ++ "\u001B[0m"
-   case Plain   -> text
+   case Colored  -> "\u001B[" ++ code ++ "m" ++ text ++ "\u001B[0m"
+   case Plain    -> text
+   case Teamcity -> text
 }

@@ -45,11 +45,17 @@ section is how the pieces fit. Six modules, each owning one concern and keeping 
   constructor field here may be called `message`.
 
 - `eliot.test.Report` — **pure**: everything about the report, testable without running a suite.
-  `data Style = Colored | Plain`, `data Tally(passedCount, failedCount)`, `tally`, `allPassed`,
+  `data Style = Colored | Plain | Teamcity`, `data Tally(passedCount, failedCount)`, `tally`, `allPassed`,
   `suiteReport(style, suiteName, results)` (the module name, then one line per subject in first-appearance order
   with each failure's lines under it) and `summary(style, tally)`. `describe` is the one place an
   `AssertionError` becomes lines, `painted` the one place holding an escape sequence. The colour helpers are not
-  called `success`/`failure`, which `Assertion` exports.
+  called `success`/`failure`, which `Assertion` exports. **`Teamcity` is the same report as service messages** for an
+  IDE's test runner to read: the module is a suite, each subject a suite inside it, each case a test named by its
+  `should` phrase; a failed case is `testFailed` (with `expected`/`actual` where it is a `NotEqual`, which is what lets
+  an IDE offer a diff) and is still `testFinished`. `escaped` is the one place the protocol's reserved characters
+  (`|` first, then `'`, newline, `[`, `]`) are handled. It has no colour and `summary` stays plain text. What a case
+  prints itself comes out *before* its suite's messages — the report is printed after the suite has run — so an IDE
+  shows it in the console but cannot attach it to the test.
 
 - `eliot.test.Arguments` — **pure**, like `Report`: what the runner's command line (`Environment.arguments`) means.
   `namesIn` (arguments not starting `--`), `selects(names, suiteName)` (module equal to a name or below it, by
@@ -57,7 +63,7 @@ section is how the pieces fit. Six modules, each owning one concern and keeping 
   colored`, first wins), `unknownOptions`, and `nothingMatched(names, tally)`. The runner **refuses rather than
   passes**: an unknown option exits 2 before running, and names that select no case exit 2 instead of "all clear"
   — a silently ignored filter looks like a pass. Operators `+`, `==` and `&&` have no relative precedence, so
-  these expressions parenthesize. A `--format=teamcity` for an IDE results tree is planned, not built.
+  these expressions parenthesize. `--format=teamcity` selects the service-message report (see `Report`).
 
 - `eliot.test.Runner` — `def main: {Console, Process, Environment} Unit`, and nothing but effects:
   `foldNamedValues("testCases", noResults, runSuite)` folds every suite; `runSuite` runs one

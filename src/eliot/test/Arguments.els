@@ -21,9 +21,10 @@ import eliot.test.Report
  * When names were given and no case ran in any suite they select, the runner says so and exits 2 instead of reporting
  * "all clear".
  *
- * An **option** starts with `--`. `--format=plain` and `--format=colored` choose the report's style over what the
- * environment suggested. Any other option is not understood, and the runner refuses to run rather than ignore it: an
- * ignored `--only` would run every suite and look like a pass.
+ * An **option** starts with `--`. `--format=plain`, `--format=colored` and `--format=teamcity` choose the report's
+ * style over what the environment suggested; `teamcity` is the service-message form an IDE's test runner reads. Any
+ * other option is not understood, and the runner refuses to run rather than ignore it: an ignored `--only` would run
+ * every suite and look like a pass.
  */
 
 /**
@@ -65,7 +66,10 @@ private def isKnown(option: String): Bool = styleNamedBy(option).isSome
  * The style `option` names, if it is a `--format=` option naming one.
  */
 private def styleNamedBy(option: String): Option[Style] =
-   if(option == "--format=plain", some(Plain)) else if(option == "--format=colored", some(Colored)) else none
+   if(option == "--format=plain", some(Plain))
+   else if(option == "--format=colored", some(Colored))
+   else if(option == "--format=teamcity", some(Teamcity))
+   else none
 
 /**
  * Whether `moduleName` is `name` or lies below it, compared by whole parts: the dot is part of the match.
