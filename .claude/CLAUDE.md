@@ -133,11 +133,10 @@ three tiny modules plus the mocking library and a self-test:
   case's failure lines, empty exactly when it passed. `report` derives both the counts and the detail body from
   the one list, and `runSubject` is the only thing that prints. Keep the fold's body pure and
   `.foreach(printLine)` the lines it yields — which is why `runSubject` reads its group through the pure
-  `groupSubject`/`groupResults` projections (the stdlib's `keyOf` trick) rather than printing inside a
-  `foldPair`. `subjectOf` is the separate grouping key, reaching through `result.testCase.subject`.
-  `describe` is the one place turning an `AssertionError` shape into presentation lines, and the `ansi*` helpers
-  the one place holding an escape sequence. `header` picks its line with `fold`, **not** `if..else`: `else` and
-  `++` have no declared relative precedence, so an `if..else` whose arms concatenate strings does not compile.
+  `first`/`second` projections rather than printing inside a `foldPair`. `subjectOf` is the separate grouping
+  key, reaching through `result.testCase.subject`. `describe` is the one place turning an `AssertionError` shape
+  into presentation lines, and the `ansi*` helpers the one place holding an escape sequence. `header`'s arms are
+  blocks because an `if`'s first arm is a juxtaposed argument, which binds tighter than `++`.
 
 **The one architectural idea worth internalizing: tests register by name, via compile-time
 reflection — there is no central list, no annotations, no import wiring.** The runner calls
@@ -300,10 +299,12 @@ The framework compiles and runs: `src` + `test` builds `target/Runner.jar`, whic
 per test subject with its pass and failure counts, then a closing summary line for the whole run. **96 cases,
 all passing.**
 
-> **Compiler version.** Needs a compiler at or past `2c3db71` (2026-09-12) — effects v6, the fix for an
-> under-applied ability-implementation native (`32406522`, which `MockFileSystemTests`' `listDirectory(…).map(show)`
-> hits), and the **row alias reached by ordinary name resolution**, which is what lets `Test` be declared in
-> `eliot.test.Test` and named from a suite in another file.
+> **Compiler version.** Needs eliot `v0.7`: the base's `when`/`unless`, `someIf`, `filterMap`/`findMap`,
+> `includes`, `Eq[Option]` and `first`/`second`, which the assertions and the doubles are written with, and the
+> fix for two `if..else`s over two kinds of `Option` sharing one `runAbort` (`NoSuchMethodError`). Before that,
+> `2c3db71` (2026-09-12) — effects v6, the fix for an under-applied ability-implementation native (`32406522`,
+> which `MockFileSystemTests`' `listDirectory(…).map(show)` hits), and the **row alias reached by ordinary name
+> resolution**, which is what lets `Test` be declared in `eliot.test.Test` and named from a suite in another file.
 
 ## Building and running
 
@@ -335,8 +336,10 @@ The pinned launcher must read `compiler` and `asset` clauses — `v0.3` or later
 over from nothing; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY` points the
 wrapper at a mirror.
 
-The floor is eliot `v0.4`, the first tag with the compiler's `run` mode and a descriptor naming its
-assets with `asset` — a launcher reads one format and no other.
+The floor is eliot `v0.7`, the first whose base has the conveniences the framework is written with
+(`when`/`unless`, `someIf`, `filterMap`/`findMap`, `includes`, `Eq[Option]`, `first`/`second`). `v0.4` was
+the first tag with the compiler's `run` mode and a descriptor naming its assets with `asset` — a launcher
+reads one format and no other.
 
 ### The compiler CLI, for a change to the compiler itself
 

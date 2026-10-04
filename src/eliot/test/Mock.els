@@ -184,16 +184,14 @@ def forgetCalls: {Mocking} Unit = forgotten
  * Verify that some call contained `fragment`.
  */
 def wasCalled(fragment: String): {Calls, Throw[AssertionError]} Unit =
-   fold(callCount(fragment) > 0, success, missing("a call containing '" ++ fragment ++ "'"))
+   when(callCount(fragment) == 0) missing("a call containing '" ++ fragment ++ "'")
 
 /**
  * Verify that no call contained `fragment` — that the code under test did *not* do something.
  */
 def wasNeverCalled(fragment: String): {Calls, Throw[AssertionError]} Unit =
-   fold(
-      callCount(fragment) == 0,
-      success,
-      raise(Failed("expected no call containing '" ++ fragment ++ "', but found " ++ callsMatching(fragment)))
+   unless(callCount(fragment) == 0) fail(
+      "expected no call containing '" ++ fragment ++ "', but found " ++ callsMatching(fragment)
    )
 
 /**
@@ -206,36 +204,34 @@ def wasCalledOnce(fragment: String): {Calls, Throw[AssertionError]} Unit = wasCa
  * Verify that exactly `count` calls contained `fragment`.
  */
 def wasCalledTimes(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit =
-   fold(callCount(fragment) == count, success, countMismatch(count, fragment, "exactly"))
+   unless(callCount(fragment) == count) countMismatch(count, fragment, "exactly")
 
 /**
  * Verify that at least `count` calls contained `fragment`.
  */
 def wasCalledAtLeast(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit =
-   fold(callCount(fragment) >= count, success, countMismatch(count, fragment, "at least"))
+   unless(callCount(fragment) >= count) countMismatch(count, fragment, "at least")
 
 /**
  * Verify that at most `count` calls contained `fragment`.
  */
 def wasCalledAtMost(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit =
-   fold(callCount(fragment) <= count, success, countMismatch(count, fragment, "at most"))
+   unless(callCount(fragment) <= count) countMismatch(count, fragment, "at most")
 
 /**
  * Verify that calls containing each of `fragments` happened, in that order — other calls in between are
  * allowed, exactly as an `InOrder` verification permits.
  */
 def wereCalledInOrder(fragments: List[String]): {Calls, Throw[AssertionError]} Unit =
-   fold(
-      recordedCalls.foldLeft(fragments, call -> pending -> advanced(call, pending)).isEmpty,
-      success,
-      raise(Failed("expected calls in order: " ++ fragments.joined(", ") ++ "; got: " ++ describedCalls))
+   unless(recordedCalls.foldLeft(fragments, call -> pending -> advanced(call, pending)).isEmpty) fail(
+      "expected calls in order: " ++ fragments.joined(", ") ++ "; got: " ++ describedCalls
    )
 
 /**
  * Verify that nothing was asked of any double at all.
  */
 def nothingWasCalled: {Calls, Throw[AssertionError]} Unit =
-   fold(recordedCalls.isEmpty, success, raise(Failed("expected no calls, but found " ++ calls)))
+   unless(recordedCalls.isEmpty) fail("expected no calls, but found " ++ calls)
 
 /**
  * Verify that every call made matched one of `fragments` — that the code under test did what was expected of
@@ -243,11 +239,7 @@ def nothingWasCalled: {Calls, Throw[AssertionError]} Unit =
  * catch a call nobody thought to check for.
  */
 def onlyTheseWereCalled(fragments: List[String]): {Calls, Throw[AssertionError]} Unit =
-   fold(
-      unexpectedCalls(fragments).isEmpty,
-      success,
-      raise(Failed("unexpected calls: " ++ unexpectedCalls(fragments).joined("; ")))
-   )
+   unless(unexpectedCalls(fragments).isEmpty) fail("unexpected calls: " ++ unexpectedCalls(fragments).joined("; "))
 
 /**
  * Expect `body` to raise, and to report something containing `expectedReport` — a raise the test *wants*, from
@@ -460,7 +452,7 @@ implement mockFileSystem: FileSystem {
 
       putState(noted("exists " ++ show(path), before))
 
-      knownPaths(before).any(known -> known == show(path))
+      knownPaths(before).includes(show(path))
    }
 
    def isDirectory(path: Path): {State[Recording]} Bool = {
@@ -468,7 +460,7 @@ implement mockFileSystem: FileSystem {
 
       putState(noted("isDirectory " ++ show(path), before))
 
-      directories(before).any(known -> known == show(path))
+      directories(before).includes(show(path))
    }
 
    def listDirectory(path: Path): {State[Recording]} List[Path] = {
@@ -558,7 +550,7 @@ private def deleted(at: String, recording: Recording): Recording =
    )
 
 private def namesPath(arrangement: Arrangement, at: String): Bool =
-   foldOption(false, known -> known == at, pathOf(arrangement))
+   pathOf(arrangement) == some(at)
 
 /**
  * The recording after a spawn: the call itself, plus anything a `whenSpawningCreates` said this command leaves
@@ -572,15 +564,11 @@ private def createdBySpawning(command: List[String], recording: Recording): Reco
    creationsFor(command, recording).foldLeft(recording, created -> after -> arrangedIn(Existing(created), after))
 
 private def creationsFor(command: List[String], recording: Recording): List[String] =
-   recording.arrangements.foldLeft(empty, arrangement -> found -> withCreationOf(arrangement, command, found))
+   recording.arrangements.filterMap(arrangement -> creationOf(arrangement, command))
 
-private def withCreationOf(
-   arrangement: Arrangement,
-   command: List[String],
-   found: List[String]
-): List[String] = arrangement match {
-   case Creating(fragment, created) -> fold(contains(fragment, command.joined(" ")), append(found, created), found)
-   case _                           -> found
+private def creationOf(arrangement: Arrangement, command: List[String]): Option[String] = arrangement match {
+   case Creating(fragment, created) -> someIf(contains(fragment, command.joined(" "))) created
+   case _                           -> none
 }
 
 private def spawnNote(command: List[String], workingDirectory: Path): String =
@@ -591,33 +579,20 @@ private def spawnNote(command: List[String], workingDirectory: Path): String =
  * lets a body re-arm a mock between two acts — or a silent success where a test arranged none.
  */
 private def spawnedFor(command: List[String], recording: Recording): ProcessResult =
-   foldOption(
-      ProcessResult(0, "", ""),
-      arrangement -> spawnedResultOf(arrangement),
-      recording.arrangements.find(arrangement -> spawns(arrangement, command.joined(" ")))
-   )
+   recording.arrangements.findMap(arrangement -> spawnedResultOf(arrangement, command.joined(" "))) orElse
+      ProcessResult(0, "", "")
 
-private def spawns(arrangement: Arrangement, commandLine: String): Bool = arrangement match {
-   case Spawning(fragment, _) -> contains(fragment, commandLine)
-   case _                     -> false
-}
-
-private def spawnedResultOf(arrangement: Arrangement): ProcessResult = arrangement match {
-   case Spawning(_, result) -> result
-   case _                   -> ProcessResult(0, "", "")
+private def spawnedResultOf(arrangement: Arrangement, commandLine: String): Option[ProcessResult] = arrangement match {
+   case Spawning(fragment, result) -> someIf(contains(fragment, commandLine)) result
+   case _                          -> none
 }
 
 private def contentAt(at: String, recording: Recording): String =
-   foldOption("", arrangement -> contentOf(arrangement), recording.arrangements.find(arrangement -> holds(arrangement, at)))
+   recording.arrangements.findMap(arrangement -> contentOf(arrangement, at)) orElse ""
 
-private def holds(arrangement: Arrangement, at: String): Bool = arrangement match {
-   case Holding(filePath, _) -> filePath == at
-   case _                    -> false
-}
-
-private def contentOf(arrangement: Arrangement): String = arrangement match {
-   case Holding(_, content) -> content
-   case _                   -> ""
+private def contentOf(arrangement: Arrangement, at: String): Option[String] = arrangement match {
+   case Holding(filePath, content) -> someIf(filePath == at) content
+   case _                          -> none
 }
 
 /**
@@ -630,29 +605,24 @@ private def foldedLines[B](initial: B, step: B => String => B, at: String, recor
 private def asPaths(names: List[String]): List[Path] = names.map(path)
 
 private def linesAt(at: String, recording: Recording): List[String] =
-   fold(contentAt(at, recording) == "", empty, split("\n", contentAt(at, recording)))
+   if(contentAt(at, recording) == "") empty else split("\n", contentAt(at, recording))
 
 /**
  * Every path the virtual tree knows about — files a test arranged or the code wrote, and directories.
  */
-private def knownPaths(recording: Recording): List[String] =
-   recording.arrangements.foldLeft(empty, arrangement -> known -> withPathOf(arrangement, known))
-
-private def withPathOf(arrangement: Arrangement, known: List[String]): List[String] =
-   foldOption(known, at -> append(known, at), pathOf(arrangement))
+private def knownPaths(recording: Recording): List[String] = recording.arrangements.filterMap(pathOf)
 
 private def pathOf(arrangement: Arrangement): Option[String] = arrangement match {
-   case Holding(filePath, _)  -> Some(filePath)
-   case Existing(existingAt)  -> Some(existingAt)
-   case _                     -> None
+   case Holding(filePath, _)  -> some(filePath)
+   case Existing(existingAt)  -> some(existingAt)
+   case _                     -> none
 }
 
-private def directories(recording: Recording): List[String] =
-   recording.arrangements.foldLeft(empty, arrangement -> known -> withDirectoryOf(arrangement, known))
+private def directories(recording: Recording): List[String] = recording.arrangements.filterMap(directoryOf)
 
-private def withDirectoryOf(arrangement: Arrangement, known: List[String]): List[String] = arrangement match {
-   case Existing(existingAt) -> append(known, existingAt)
-   case _                    -> known
+private def directoryOf(arrangement: Arrangement): Option[String] = arrangement match {
+   case Existing(existingAt) -> some(existingAt)
+   case _                    -> none
 }
 
 /**
@@ -667,55 +637,26 @@ private def isImmediate(directory: String, known: String): Bool =
 private def everythingUnder(directory: String, recording: Recording): List[String] =
    knownPaths(recording).filter(known -> startsWith(directory ++ "/", known))
 
-private def argumentsIn(recording: Recording): List[String] =
-   foldOption(
-      empty,
-      arrangement -> passedOf(arrangement),
-      recording.arrangements.find(arrangement -> passes(arrangement))
-   )
+private def argumentsIn(recording: Recording): List[String] = recording.arrangements.findMap(passedOf) orElse empty
 
-private def passes(arrangement: Arrangement): Bool = arrangement match {
-   case Passing(_) -> true
-   case _          -> false
-}
-
-private def passedOf(arrangement: Arrangement): List[String] = arrangement match {
-   case Passing(passed) -> passed
-   case _               -> empty
+private def passedOf(arrangement: Arrangement): Option[List[String]] = arrangement match {
+   case Passing(passed) -> some(passed)
+   case _               -> none
 }
 
 private def variableIn(name: String, recording: Recording): Option[String] =
-   foldOption(
-      None,
-      arrangement -> Some(valueOf(arrangement)),
-      recording.arrangements.find(arrangement -> defines(arrangement, name))
-   )
+   recording.arrangements.findMap(arrangement -> valueOf(arrangement, name))
 
-private def defines(arrangement: Arrangement, name: String): Bool = arrangement match {
-   case Defining(variableName, _) -> variableName == name
-   case _                         -> false
+private def valueOf(arrangement: Arrangement, name: String): Option[String] = arrangement match {
+   case Defining(variableName, value) -> someIf(variableName == name) value
+   case _                             -> none
 }
 
-private def valueOf(arrangement: Arrangement): String = arrangement match {
-   case Defining(_, value) -> value
-   case _                  -> ""
-}
+private def workingPathIn(recording: Recording): String = recording.arrangements.findMap(workingOf) orElse "."
 
-private def workingPathIn(recording: Recording): String =
-   foldOption(
-      ".",
-      arrangement -> workingOf(arrangement),
-      recording.arrangements.find(arrangement -> worksIn(arrangement))
-   )
-
-private def worksIn(arrangement: Arrangement): Bool = arrangement match {
-   case WorkingIn(_) -> true
-   case _            -> false
-}
-
-private def workingOf(arrangement: Arrangement): String = arrangement match {
-   case WorkingIn(at) -> at
-   case _             -> "."
+private def workingOf(arrangement: Arrangement): Option[String] = arrangement match {
+   case WorkingIn(at) -> some(at)
+   case _             -> none
 }
 
 private def matchingCalls(fragment: String): {Calls} List[String] =
@@ -727,7 +668,7 @@ private def unexpectedCalls(fragments: List[String]): {Calls} List[String] =
 private def missing(what: String): {Calls, Throw[AssertionError]} Unit =
    raise(Failed("expected " ++ what ++ ", but the calls were: " ++ describedCalls))
 
-private def describedCalls: {Calls} String = fold(recordedCalls.isEmpty, "none", calls)
+private def describedCalls: {Calls} String = if(recordedCalls.isEmpty) "none" else calls
 
 private def countMismatch(count: Int, fragment: String, qualifier: String): {Calls, Throw[AssertionError]} Unit =
    raise(NotEqual(
@@ -740,14 +681,12 @@ private def countMismatch(count: Int, fragment: String, qualifier: String): {Cal
  * anything else leaves the expectation where it was.
  */
 private def advanced(call: String, pending: List[String]): List[String] =
-   foldOption(pending, next -> fold(contains(next, call), pending.tail, pending), pending.head)
+   if(pending.head.anyOption(next -> contains(next, call))) pending.tail else pending
 
 /**
  * `raising`'s verdict on a report that was raised: it passes when the report contains what the test named.
  */
 private def matchedReport(expectedReport: String, report: String): {Throw[AssertionError]} Unit =
-   fold(
-      contains(expectedReport, report),
-      success,
-      raise(Failed("expected a raise reporting '" ++ expectedReport ++ "', but got '" ++ report ++ "'"))
+   unless(contains(expectedReport, report)) fail(
+      "expected a raise reporting '" ++ expectedReport ++ "', but got '" ++ report ++ "'"
    )
