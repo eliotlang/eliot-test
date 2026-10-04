@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`eliot.test` — a unit-testing framework for the [Eliot language](https://github.com/robertbraeutigam/eliot),
+`eliot.test` — a unit-testing framework for the [Eliot language](https://github.com/eliotlang/eliot),
 written *in* Eliot. It dogfoods: the library under `src/` is exercised by tests under `test/` that
 are written with the very framework they test.
 
