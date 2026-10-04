@@ -22,8 +22,9 @@
 -- is this repository's own suite, at `test/src`, and it runs the way every consumer's does — through
 -- `//suite`.
 --
--- `v0.4` is the floor because it is the first eliot tag whose compiler has the `run` mode and picks a
--- backend by it, and whose descriptor names its assets the way a launcher reads today.
+-- `v0.7` is the floor because it is the first eliot tag whose base has the conveniences the framework
+-- is written with (`when`/`unless`, `someIf`, `filterMap`/`findMap`, `includes`, `Eq[Option]`,
+-- `first`/`second`). `v0.4` was the first whose compiler has the `run` mode and picks a backend by it.
 
 -- The launcher `./eliotw` runs, and the one line of this file the wrapper reads: it greps for the first
 -- line starting `launcher `. The launcher itself accepts the line and ignores it.
@@ -31,8 +32,8 @@ launcher v0.5
 
 package root {
   at .
-  dep github.com/robertbraeutigam/eliot//lang v0.4
-  dep github.com/robertbraeutigam/eliot//stdlib v0.4
+  dep github.com/robertbraeutigam/eliot//lang v0.7
+  dep github.com/robertbraeutigam/eliot//stdlib v0.7
 }
 
 package suite {
@@ -42,11 +43,11 @@ package suite {
 
 package runner {
   dep //root
-  dep github.com/robertbraeutigam/eliot//jvm v0.4
+  dep github.com/robertbraeutigam/eliot//jvm v0.7
   compiler exe-jar -m eliot.test.Runner
 }
 
 package test {
   dep //suite
-  dep github.com/robertbraeutigam/eliot//jvm v0.4
+  dep github.com/robertbraeutigam/eliot//jvm v0.7
 }

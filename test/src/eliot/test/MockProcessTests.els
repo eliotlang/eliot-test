@@ -99,10 +99,7 @@ private def here: Path = path(".")
  * every cache has, and the one a mock that never changes the world cannot check.
  */
 private def cloneUnlessPresent: {Process, FileSystem, Throw[IoError]} Unit =
-   foldOption(unit, _ -> clone, missingMirror)
-
-private def missingMirror: {FileSystem, Throw[IoError]} Option[Unit] =
-   fold(exists(path("/cache/mirror")), None, Some(unit))
+   unless(exists(path("/cache/mirror"))) clone
 
 private def clone: {Process, Throw[IoError]} Unit = {
    run(command("git").withArgument("clone"), here)

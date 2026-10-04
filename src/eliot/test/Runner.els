@@ -18,7 +18,7 @@ def main: {Console, Process} Unit = {
    val failureLines = allCaseFailures
 
    printLine(summary(failureLines))
-   registerExitCode(fold(failureLines.passedCount == failureLines.size, 0, 1))
+   registerExitCode(if(failureLines.passedCount == failureLines.size) 0 else 1)
 }
 
 /**
@@ -56,9 +56,9 @@ private def runSuite(
  * were any — how many failed, with each failure's detail lines following underneath.
  */
 private def runSubject(group: Pair[String, List[TestResult]]): {Console} List[List[String]] = {
-   val caseFailures = group.groupResults.map(failureLines)
+   val caseFailures = group.second.map(failureLines)
 
-   report(group.groupSubject, caseFailures).foreach(printLine)
+   report(group.first, caseFailures).foreach(printLine)
 
    caseFailures
 }
@@ -95,12 +95,12 @@ private def passedCount(failureLines: List[List[String]]): Int = failureLines.fi
  * soon as anything did not.
  */
 private def header(subjectName: String, passedCount: Int, failedCount: Int): String =
-   fold(
-      failedCount == 0,
-      " ✔ ".ansiSuccess ++ subjectName.ansiHighlight ++ (" · " ++ show(passedCount) ++ " passed").ansiNote,
+   if(failedCount == 0) {
+      " ✔ ".ansiSuccess ++ subjectName.ansiHighlight ++ (" · " ++ show(passedCount) ++ " passed").ansiNote
+   } else {
       " ✗ ".ansiFail ++ subjectName.ansiHighlight ++ (" · " ++ show(passedCount) ++ " passed, ").ansiNote ++
          (show(failedCount) ++ " failed").ansiFail
-   )
+   }
 
 /**
  * The lines reporting one case's failure — its `should` phrase and the failure's detail lines — or no lines at all
@@ -128,18 +128,6 @@ private def describe(error: AssertionError): List[String] = error match {
    case UnexpectedlyEqual(equal)   -> singleton("expected a value different from ".ansiNote ++ equal.ansiFail)
    case NoErrorRaised(expected)    -> append(singleton("expected error ".ansiNote ++ expected.ansiSuccess), "but no error was raised".ansiFail)
 }
-
-/**
- * `private` because it is `runSubject`'s way of reading the group it was handed, not an operation of its own:
- * `foldPair`'s result is a plain type parameter, so the name has to come out of the pair before anything
- * printing it can run.
- */
-private def groupSubject(group: Pair[String, List[TestResult]]): String = group.foldPair(subjectName -> _ -> subjectName)
-
-/**
- * `private` because it is `groupSubject`'s counterpart: the results of the group, for the same reason.
- */
-private def groupResults(group: Pair[String, List[TestResult]]): List[TestResult] = group.foldPair(_ -> results -> results)
 
 private def ansiFail(str: String): String = str.ansi("1;31")
 

@@ -80,7 +80,7 @@ def expect[E ~ Eq & Show](error: E, body: {Throw[E]} Unit): {Throw[AssertionErro
  * rendered values otherwise.
  */
 infix def shouldBe[A ~ Eq & Show](actual: A, expected: A): {Throw[AssertionError]} Unit =
-   if(actual == expected) unit else raise(NotEqual(show(expected), show(actual)))
+   unless(actual == expected) raise(NotEqual(show(expected), show(actual)))
 
 /**
  * Assert that `actual` is `true`, raising `Failed` otherwise: `exists(path("/tmp/x")).shouldBeTrue`.
@@ -89,20 +89,20 @@ infix def shouldBe[A ~ Eq & Show](actual: A, expected: A): {Throw[AssertionError
  * predicate is exactly the thing a test asserts on most often after a value.
  */
 def shouldBeTrue(actual: Bool): {Throw[AssertionError]} Unit =
-   fold(actual, success, raise(Failed("expected true, but was false")))
+   unless(actual) fail("expected true, but was false")
 
 /**
  * Assert that `actual` is `false`, raising `Failed` otherwise: `isDirectory(path("/tmp/x")).shouldBeFalse`.
  */
 def shouldBeFalse(actual: Bool): {Throw[AssertionError]} Unit =
-   fold(actual, raise(Failed("expected false, but was true")), success)
+   when(actual) fail("expected false, but was true")
 
 /**
  * Assert that `actual` differs from `unexpected` (by their `Eq` instance), raising `UnexpectedlyEqual` with
  * the rendered value both sides turned out to be otherwise.
  */
 infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A): {Throw[AssertionError]} Unit =
-   if(actual != unexpected) unit else raise(UnexpectedlyEqual(show(actual)))
+   when(actual == unexpected) raise(UnexpectedlyEqual(show(actual)))
 
 /**
  * Rewrite the failure message: runs `body` and, when it raises any `AssertionError`, re-raises it as a
@@ -112,9 +112,9 @@ infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A): {Thr
  * import both — which would have barred every test that both asserts and names a file.
  *
  * Its body's row names the effect `describedAs` itself raises, which is fine and was not before: discharge is a frame
- * installed at the `runThrow` call, and the nearest enclosing frame is this one — so the body's raise is caught here
- * and the re-raise leaves through the enclosing case's frame.
+ * installed at the `catch`, and the nearest enclosing frame is this one — so the body's raise is caught here and the
+ * re-raise leaves through the enclosing case's frame. The `catch`'s type arguments are spelled because the body is a
+ * parameter, whose declaration cannot say which `Throw` the call supplies.
  */
 infix left below shouldBe def describedAs(body: {Throw[AssertionError]} Unit, newMessage: String): {Throw[AssertionError]} Unit =
-   runThrow[AssertionError, Unit](body)
-      .foldEither(_ -> fail(newMessage), _ -> success)
+   catch[AssertionError, Unit](body, _ -> fail(newMessage))
