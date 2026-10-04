@@ -10,8 +10,8 @@
 -- `compiler run -m eliot.test.Runner` compiles the closure with the runner as its entry point and then
 -- runs it, exiting with its code. It names no backend — the one backend in the consumer's closure that
 -- accepts `run` gets it — so the line stays as platform-independent as the framework. A consumer writes
--- `dep github.com/eliotlang/eliot-test//suite v0.2` beside its platform and `eliot build test` runs its
--- cases. `suite` has no sources of its own; its directory does not exist and mounts nothing.
+-- `dep github.com/eliotlang/eliot-test//suite v0.2` beside its platform and `./eliotw <its package>` runs
+-- its cases. `suite` has no sources of its own; its directory does not exist and mounts nothing.
 --
 -- Both layers of the base are named in `root`, because `src` resolves against what it declares and
 -- nothing else: the assertions and the mocks are written over `eliot.collection.List`, `eliot.file` and

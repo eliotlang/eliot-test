@@ -1,20 +1,22 @@
 /**
- * The error raised by a failing assertion: a semantic failure shape carrying the already-rendered values
- * involved. Assertions render values to `String` at the raise site (where the `Show` instance is known);
- * choosing how a shape is *presented* — labels, layout, color — is the runner's job.
+ * The error a failing assertion raises. Each constructor is a kind of failure, carrying the values involved
+ * already rendered as text; the runner decides how each kind is printed.
  *
- * The constructors are failure shapes, not one per assertion: new assertions mostly reuse `NotEqual` and
- * `Failed` rather than adding shapes.
+ * - `Failed(reason)` — a failure explained in words, as raised by `fail`.
+ * - `NotEqual(expectedValue, actualValue)` — two values differed, as raised by `shouldBe`.
+ * - `UnexpectedlyEqual(equalValue)` — two values were the same, as raised by `shouldNotBe`.
+ * - `NoErrorRaised(expectedError)` — a body was expected to raise and did not, as raised by `expect`.
+ * - `Described(description, originalFailure)` — any of the above under a description of the test's own, as raised by `describedAs`.
  */
 data AssertionError = Failed(reason: String) |
    NotEqual(expectedValue: String, actualValue: String) |
    UnexpectedlyEqual(equalValue: String) |
-   NoErrorRaised(expectedError: String)
+   NoErrorRaised(expectedError: String) |
+   Described(description: String, originalFailure: String)
 
 /**
- * Two assertion errors are equal when they are the same failure shape carrying the same rendered values.
- * Being structural — rather than comparing rendered messages — lets `expect` check for a specific failure
- * without coupling tests to presentation.
+ * Two assertion errors are equal when they are the same kind of failure carrying the same values, which is what
+ * lets `expect` check for one specific failure.
  */
 implement Eq[AssertionError] {
    def equals(a: AssertionError, b: AssertionError): Bool = a match {
@@ -34,87 +36,102 @@ implement Eq[AssertionError] {
          case NoErrorRaised(otherExpected) -> expected == otherExpected
          case _                            -> false
       }
+      case Described(message, cause) -> b match {
+         case Described(otherMessage, otherCause) -> message == otherMessage && cause == otherCause
+         case _                                   -> false
+      }
    }
 }
 
 /**
- * A compact single-line debug rendering of the failure shape, used when an assertion error is itself a
- * compared value (as in `expect`'s mismatch report). The runner's multi-line presentation is separate.
+ * A one-line rendering naming the kind of failure and its values, such as `NotEqual(expected: a, actual: b)`.
  */
 implement Show[AssertionError] {
    def show(value: AssertionError): String = value match {
       case Failed(reason)             -> "Failed(" ++ reason ++ ")"
-      case NotEqual(expected, actual) -> "NotEqual(" ++ expected ++ ", " ++ actual ++ ")"
+      case NotEqual(expected, actual) -> "NotEqual(expected: " ++ expected ++ ", actual: " ++ actual ++ ")"
       case UnexpectedlyEqual(equal)   -> "UnexpectedlyEqual(" ++ equal ++ ")"
       case NoErrorRaised(expected)    -> "NoErrorRaised(" ++ expected ++ ")"
+      case Described(message, cause)  -> "Described(" ++ message ++ ", cause: " ++ cause ++ ")"
    }
 }
 
 /**
- * A trivially passing test body: it makes no assertion, so it never raises.
+ * A test body that passes without asserting anything.
  */
 def success: {Throw[AssertionError]} Unit = unit
 
 /**
- * Fail the current test unconditionally with the given `reason`.
+ * Fail the test with the given `reason`.
  */
 def fail(reason: String): {Throw[AssertionError]} Unit = raise(Failed(reason))
 
 /**
- * Expect the given `error` to be raised by `body`: passes when the raised error equals `error`, raises
- * `NotEqual` when the body raises a different error and `NoErrorRaised` when it completes without raising.
- *
- * The body's row **supplies** `Throw[E]` and says nothing about anything else, so `expect` composes with any case:
- * one that performs a real effect where the suite declares one, one running against doubles, or one that performs
- * nothing at all. `runThrow` installs the frame the body's `raise` leaves through, and that frame is the nearest
- * enclosing one for `E`, so a raise of an unrelated error type passes straight through it.
- */
-def expect[E ~ Eq & Show](error: E, body: {Throw[E]} Unit): {Throw[AssertionError]} Unit = {
-   val outcome = runThrow(body)
-
-   outcome.foldEither(raised -> raised shouldBe error, _ -> raise(NoErrorRaised(show(error))))
-}
-
-/**
- * Assert that `expected` and `actual` are equal (by their `Eq` instance), raising `NotEqual` with both
- * rendered values otherwise.
+ * Assert that `actual` equals `expected`, failing with `NotEqual` otherwise: `greeting("Bob") shouldBe "Hello, Bob!"`.
  */
 infix def shouldBe[A ~ Eq & Show](actual: A, expected: A): {Throw[AssertionError]} Unit =
    unless(actual == expected) raise(NotEqual(show(expected), show(actual)))
 
 /**
- * Assert that `actual` is `true`, raising `Failed` otherwise: `exists(path("/tmp/x")).shouldBeTrue`.
- *
- * A word of its own because `Bool` has no `Show` instance, so `shouldBe true` does not compile — and a
- * predicate is exactly the thing a test asserts on most often after a value.
- */
-def shouldBeTrue(actual: Bool): {Throw[AssertionError]} Unit =
-   unless(actual) fail("expected true, but was false")
-
-/**
- * Assert that `actual` is `false`, raising `Failed` otherwise: `isDirectory(path("/tmp/x")).shouldBeFalse`.
- */
-def shouldBeFalse(actual: Bool): {Throw[AssertionError]} Unit =
-   when(actual) fail("expected false, but was true")
-
-/**
- * Assert that `actual` differs from `unexpected` (by their `Eq` instance), raising `UnexpectedlyEqual` with
- * the rendered value both sides turned out to be otherwise.
+ * Assert that `actual` differs from `unexpected`, failing with `UnexpectedlyEqual` otherwise.
  */
 infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A): {Throw[AssertionError]} Unit =
    when(actual == unexpected) raise(UnexpectedlyEqual(show(actual)))
 
 /**
- * Rewrite the failure message: runs `body` and, when it raises any `AssertionError`, re-raises it as a
- * `Failed` carrying `newMessage`. A passing body is left untouched.
+ * Assert that `actual` is `true`: `exists(path("/tmp/x")).shouldBeTrue`. (`shouldBe true` does not compile,
+ * because `Bool` has no `Show`.)
+ */
+def shouldBeTrue(actual: Bool): {Throw[AssertionError]} Unit =
+   unless(actual) fail("expected true, but was false")
+
+/**
+ * Assert that `actual` is `false`: `isDirectory(path("/tmp/x")).shouldBeFalse`.
+ */
+def shouldBeFalse(actual: Bool): {Throw[AssertionError]} Unit =
+   when(actual) fail("expected false, but was true")
+
+/**
+ * Give a failing assertion a message of the test's own. The original failure is kept as the cause, so the report
+ * still shows what was expected and what was found:
  *
- * Named `describedAs` rather than `message` because `eliot.file.File` exports a `message` too, and no file may
- * import both — which would have barred every test that both asserts and names a file.
+ * ```eliot
+ * config.port shouldBe 8080 describedAs "the default port"
+ * // fails with Described("the default port", "NotEqual(expected: 8080, actual: 80)")
+ * ```
  *
- * Its body's row names the effect `describedAs` itself raises, which is fine and was not before: discharge is a frame
- * installed at the `catch`, and the nearest enclosing frame is this one — so the body's raise is caught here and the
- * re-raise leaves through the enclosing case's frame. The `catch`'s type arguments are spelled because the body is a
- * parameter, whose declaration cannot say which `Throw` the call supplies.
+ * A passing body passes unchanged.
  */
 infix left below shouldBe def describedAs(body: {Throw[AssertionError]} Unit, newMessage: String): {Throw[AssertionError]} Unit =
-   catch[AssertionError, Unit](body, _ -> fail(newMessage))
+   catch[AssertionError, Unit](body, cause -> raise(Described(newMessage, show(cause))))
+
+/**
+ * Assert that `body` raises exactly `error`: `expect(NotEqual("a", "b"), "b" shouldBe "a")`.
+ *
+ * Fails with `NotEqual` when the body raises a different error, and with `NoErrorRaised` when it raises nothing.
+ * `raising` is the same check comparing only part of the error's text.
+ */
+def expect[E ~ Eq & Show](error: E, body: {Throw[E]} Unit): {Throw[AssertionError]} Unit =
+   runThrow(body).foldEither(raised -> raised shouldBe error, _ -> raise(NoErrorRaised(show(error))))
+
+/**
+ * Assert that `body` raises an error whose text contains `expectedReport`:
+ *
+ * ```eliot
+ * raising[GitError]("exit code 128", fetch(mirror))
+ * ```
+ *
+ * Use it when the exact error is beside the point and a recognisable part of its message is enough; `expect` is
+ * the same check comparing the whole error. The error type is written out when the body alone does not say which
+ * one it raises, as above.
+ */
+def raising[E ~ Show](expectedReport: String, body: {Throw[E]} Unit): {Throw[AssertionError]} Unit =
+   runThrow[E, Unit](body).foldEither(
+      raised -> reportContaining(expectedReport, show(raised)),
+      _ -> fail("expected a raise reporting '" ++ expectedReport ++ "', but nothing was raised")
+   )
+
+private def reportContaining(expectedReport: String, report: String): {Throw[AssertionError]} Unit =
+   unless(contains(expectedReport, report)) fail(
+      "expected a raise reporting '" ++ expectedReport ++ "', but got '" ++ report ++ "'"
+   )

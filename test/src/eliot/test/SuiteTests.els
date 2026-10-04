@@ -1,0 +1,40 @@
+import eliot.collection.List
+import eliot.test.Assertion
+import eliot.test.Test
+
+/**
+ * `should` and `in` themselves, checked by running a small suite inside a case and looking at what it collected.
+ */
+def testCases: Test = {
+   "in" should "collect one result per case, in the order they were written" in {
+      runWriterToLog(twoCases).map(result -> result.testCase.shouldPhrase).joined(",") shouldBe "fail,pass"
+   }
+   "in" should "record a failed assertion as that case's failure" in {
+      runWriterToLog(twoCases).map(result -> show(failureOf(result))).joined(",") shouldBe "Failed(on purpose),none"
+   }
+   "in" should "keep running the next case after one fails" in {
+      runWriterToLog(twoCases).filter(passed).size shouldBe 1
+   }
+   "should" should "name the subject and the expectation" in {
+      val named = "subject" should "do something"
+
+      named.subject shouldBe "subject"
+      named.shouldPhrase shouldBe "do something"
+   }
+}
+
+/**
+ * A suite of two cases: the first fails, the second passes.
+ */
+private def twoCases: Test = {
+   "sample" should "fail" in fail("on purpose")
+   "sample" should "pass" in success
+}
+
+/**
+ * The failure a result carries, rendered, or `none` for a passed case.
+ */
+private def failureOf(result: TestResult): String = result.outcome match {
+   case Passed                   -> "none"
+   case FailedWith(failure)      -> show(failure)
+}

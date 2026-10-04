@@ -6,11 +6,8 @@ import eliot.test.Test
 import eliot.test.Mock
 
 /**
- * The filesystem double: a virtual tree of what a test arranged plus whatever the code under test wrote,
- * every method recording the call it was asked.
- *
- * The twelve methods of `FileSystem` are the reason this framework owns the doubles rather than each project
- * writing them: a suite calls three of them and needs all twelve to exist.
+ * The file system double: an in-memory tree of what a test arranged plus whatever the code under test wrote,
+ * every operation recording the call it was asked.
  */
 def testCases: Test = {
    "readFile" should "answer what the test arranged" in mocked {
@@ -81,18 +78,37 @@ def testCases: Test = {
       isDirectory(path("/tmp/dir")).shouldBeTrue
       isDirectory(path("/tmp/file")).shouldBeFalse
    }
-   "listDirectory" should "answer the immediate entries, and not what is deeper" in mocked {
+   "listDirectory" should "answer the immediate entries, a subdirectory once, and not what is deeper" in mocked {
       withFile(path("/tmp/dir/one"), "1")
       withFile(path("/tmp/dir/two"), "2")
       withFile(path("/tmp/dir/nested/three"), "3")
+      withFile(path("/tmp/dir/nested/four"), "4")
 
-      listDirectory(path("/tmp/dir")).map(show).sorted.joined(",") shouldBe "/tmp/dir/one,/tmp/dir/two"
+      listDirectory(path("/tmp/dir")).map(show).sorted.joined(",") shouldBe "/tmp/dir/nested,/tmp/dir/one,/tmp/dir/two"
    }
-   "walk" should "answer everything underneath, however deep" in mocked {
+   "walk" should "answer every file underneath, however deep, and no directory" in mocked {
       withFile(path("/tmp/dir/one"), "1")
       withFile(path("/tmp/dir/nested/three"), "3")
+      withDirectory(path("/tmp/dir/empty"))
 
       walk(path("/tmp/dir")).map(show).sorted.joined(",") shouldBe "/tmp/dir/nested/three,/tmp/dir/one"
+   }
+   "a directory" should "exist when a file was put inside it, even if nobody created it" in mocked {
+      withFile(path("/tmp/dir/nested/three"), "3")
+
+      exists(path("/tmp/dir")).shouldBeTrue
+      isDirectory(path("/tmp/dir/nested")).shouldBeTrue
+      isDirectory(path("/tmp/dir/nested/three")).shouldBeFalse
+   }
+   "a directory" should "be the same directory with or without a trailing slash" in mocked {
+      withDirectory(path("/tmp/dir/"))
+
+      isDirectory(path("/tmp/dir")).shouldBeTrue
+   }
+   "a path" should "not count as inside a sibling that merely starts with the same letters" in mocked {
+      withFile(path("/tmp/directory/one"), "1")
+
+      exists(path("/tmp/dir")).shouldBeFalse
    }
    "createDirectories" should "make the directory exist" in mocked {
       createDirectories(path("/tmp/made"))
@@ -104,6 +120,20 @@ def testCases: Test = {
       delete(path("/tmp/doomed"))
 
       exists(path("/tmp/doomed")).shouldBeFalse
+   }
+   "delete" should "remove a directory together with everything inside it" in mocked {
+      withFile(path("/tmp/dir/one"), "1")
+      withDirectory(path("/tmp/dir"))
+      delete(path("/tmp/dir"))
+
+      exists(path("/tmp/dir")).shouldBeFalse
+      exists(path("/tmp/dir/one")).shouldBeFalse
+   }
+   "writeFile" should "replace what the file held before" in mocked {
+      withFile(path("/tmp/out"), "old")
+      writeFile("new", path("/tmp/out"))
+
+      readFile(path("/tmp/out")) shouldBe "new"
    }
    "the filesystem double" should "record every call it is asked, in order" in mocked {
       exists(path("/a"))

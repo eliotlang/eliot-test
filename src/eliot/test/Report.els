@@ -1,0 +1,123 @@
+import eliot.collection.List
+import eliot.test.Test
+import eliot.test.Assertion
+
+/**
+ * How the report is printed: with ANSI colours for a terminal, or `Plain` text for logs and for anyone who set
+ * `NO_COLOR`.
+ */
+data Style = Colored | Plain
+
+/**
+ * How many cases passed and how many failed.
+ */
+data Tally(passedCount: Int, failedCount: Int)
+
+/**
+ * Count the passed and failed cases among `results`.
+ */
+def tally(results: List[TestResult]): Tally =
+   Tally(results.filter(passed).size, results.filter(result -> !(passed(result))).size)
+
+/**
+ * Whether nothing failed.
+ */
+def allPassed(counts: Tally): Bool = counts.failedCount == 0
+
+/**
+ * The report of one suite: its module's name, then one line per subject with each failure detailed underneath.
+ *
+ * ```
+ * eliot.test.example.GreeterTests
+ *  ✔ greeting · 2 passed
+ *  ✗ greet · 1 passed, 1 failed
+ *  | ✗ fall back to a stranger on no input
+ *  |   expected Hello, stranger!
+ *  |   actual   Hello, !
+ * ```
+ *
+ * `suiteName` is the qualified name the runner gathered the suite under, `eliot.test.example.GreeterTests::testCases`;
+ * subjects are listed in the order they first appear.
+ */
+def suiteReport(style: Style, suiteName: String, results: List[TestResult]): List[String] =
+   prepend(
+      results.groupBy(subjectOf).flatMap(group -> subjectReport(style, group.first, group.second)),
+      suiteName.before("::").dimmed(style)
+   )
+
+/**
+ * The closing line of the whole run, worth reading when the report scrolled past: "all clear" while every case
+ * passed, an inverted red band naming the failures as soon as any did not.
+ */
+def summary(style: Style, counts: Tally): String =
+   if(counts.allPassed) {
+      (" ✔ all clear · " ++ show(counts.passedCount) ++ " passed ").inGreen(style)
+   } else {
+      (" ✗ " ++ show(counts.failedCount) ++ " failed · " ++ show(counts.passedCount) ++ " passed ").alarming(style)
+   }
+
+private def subjectOf(result: TestResult): String = result.testCase.subject
+
+/**
+ * One subject's line, followed by the details of each failed case.
+ */
+private def subjectReport(style: Style, subject: String, results: List[TestResult]): List[String] =
+   prepend(results.flatMap(result -> failureLines(style, result)), header(style, subject, tally(results)))
+
+private def header(style: Style, subject: String, counts: Tally): String =
+   if(counts.allPassed) {
+      " ✔ ".inGreen(style) ++ subject.bold(style) ++ (" · " ++ show(counts.passedCount) ++ " passed").dimmed(style)
+   } else {
+      " ✗ ".inRed(style) ++ subject.bold(style) ++ (" · " ++ show(counts.passedCount) ++ " passed, ").dimmed(style) ++
+         (show(counts.failedCount) ++ " failed").inRed(style)
+   }
+
+/**
+ * A failed case's `should` phrase and what went wrong; nothing for a case that passed.
+ */
+private def failureLines(style: Style, result: TestResult): List[String] = result.outcome match {
+   case Passed            -> empty
+   case FailedWith(error) -> {
+      val title = " | ✗ ".inRed(style) ++ result.testCase.shouldPhrase.bold(style)
+      val details = describe(style, error).map(line -> " |   ".inRed(style) ++ line)
+
+      prepend(details, title)
+   }
+}
+
+/**
+ * How each kind of `AssertionError` reads in the report.
+ */
+private def describe(style: Style, error: AssertionError): List[String] = error match {
+   case Failed(reason) ->
+      singleton(reason.inRed(style))
+   case NotEqual(expected, actual) ->
+      append(singleton("expected ".dimmed(style) ++ expected.inGreen(style)), "actual   ".dimmed(style) ++ actual.inRed(style))
+   case UnexpectedlyEqual(equal) ->
+      singleton("expected a value different from ".dimmed(style) ++ equal.inRed(style))
+   case NoErrorRaised(expected) ->
+      append(singleton("expected error ".dimmed(style) ++ expected.inGreen(style)), "but no error was raised".inRed(style))
+   case Described(message, cause) ->
+      append(singleton(message.inRed(style)), "because ".dimmed(style) ++ cause)
+}
+
+private def inRed(style: Style, text: String): String = text.painted(style, "1;31")
+
+private def inGreen(style: Style, text: String): String = text.painted(style, "1;32")
+
+private def bold(style: Style, text: String): String = text.painted(style, "1;37")
+
+private def dimmed(style: Style, text: String): String = text.painted(style, "2;37")
+
+/**
+ * White on red: the summary of a failed run, so it stands out from the red failure details above it.
+ */
+private def alarming(style: Style, text: String): String = text.painted(style, "1;37;41")
+
+/**
+ * `text` wrapped in the ANSI escape sequence selecting `code` and reset after it, or `text` itself when `Plain`.
+ */
+private def painted(style: Style, code: String, text: String): String = style match {
+   case Colored -> "\u001B[" ++ code ++ "m" ++ text ++ "\u001B[0m"
+   case Plain   -> text
+}

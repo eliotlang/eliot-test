@@ -2,8 +2,7 @@ import eliot.collection.List
 import eliot.test.Assertion
 import eliot.test.Test
 
-// The suite declares its own row, and this one grants nothing but registration — so every case here can assert
-// and do nothing else: what a body may perform is exactly what the suite declares.
+// A plain `Test` suite: every case here may assert, and do nothing else.
 def testCases: Test = {
    "shouldBe" should "pass when given two equal strings" in {
       "hello" shouldBe "hello"
@@ -32,10 +31,16 @@ def testCases: Test = {
    "expect" should "raise NoErrorRaised when the body raises no error" in {
       expect(NoErrorRaised(show(Failed("boom"))), expect(Failed("boom"), success))
    }
-   "describedAs" should "rewrite any failure to Failed with the new message" in {
-      expect(Failed("values differ"), "a" shouldBe "b" describedAs "values differ")
+   "describedAs" should "put the new message in front of the original failure" in {
+      expect(Described("values differ", "NotEqual(expected: b, actual: a)"), "a" shouldBe "b" describedAs "values differ")
    }
    "describedAs" should "leave a passing body passing" in {
       "a" shouldBe "a" describedAs "should not surface"
+   }
+   "raising" should "pass when the raised error's text contains the expected part" in {
+      raising[String]("middle", raise("start middle end"))
+   }
+   "raising" should "fail when the raised error's text does not contain it" in {
+      expect(Failed("expected a raise reporting 'middle', but got 'other'"), raising[String]("middle", raise("other")))
    }
 }
