@@ -4,24 +4,47 @@ import eliot.system.Process
 import eliot.system.Environment
 import eliot.test.Test
 import eliot.test.Report
+import eliot.test.Arguments
 
 /**
- * Runs every suite in the program — every top-level value named `testCases` — printing each suite's report as it
+ * Runs the suites in the program — every top-level value named `testCases` — printing each suite's report as it
  * finishes and a summary line at the end. Exits 1 if any case failed, so whatever ran the tests fails with them.
  *
- * Set `NO_COLOR` to any value for a report without colours.
+ * With no arguments every suite runs. Module names narrow that, and `--format=plain` or `--format=colored` dresses the
+ * report; `eliot.test.Arguments` is the full command line. An option the runner does not understand stops it before any
+ * suite runs, with exit code 2, and so does naming suites that hold no case.
+ *
+ * Set `NO_COLOR` to any value for a report without colours; `--format=` wins over it.
  */
-def main: {Console, Process, Environment} Unit = {
-   val counts = tally(foldNamedValues("testCases", noResults, runSuite))
+def main: {Console, Process, Environment} Unit =
+   if(unknownOptions(arguments).isEmpty) runSuites else refuse(unknownOptions(arguments))
 
-   printLine(summary(outputStyle, counts))
-   registerExitCode(if(counts.allPassed) 0 else 1)
+private def runSuites: {Console, Process, Environment} Unit = {
+   val counts = tally(foldNamedValues("testCases", noResults, runSuite))
+   val names = namesIn(arguments)
+
+   if(nothingMatched(names, counts)) {
+      printLine("no tests found for " ++ names.joined(", "))
+      registerExitCode(2)
+   } else {
+      printLine(summary(outputStyle, counts))
+      registerExitCode(if(counts.allPassed) 0 else 1)
+   }
+}
+
+/**
+ * Say which options were not understood and stop, without having run anything.
+ */
+private def refuse(options: List[String]): {Console, Process} Unit = {
+   options.map(option -> "unknown option '" ++ option ++ "'").foreach(printLine)
+   registerExitCode(2)
 }
 
 private def noResults: List[TestResult] = empty
 
 /**
- * Runs one suite, prints its report, then runs the suites after it.
+ * Runs one suite, prints its report, then runs the suites after it. A suite the command line did not select is not run
+ * at all, and prints nothing: only the suites after it are.
  *
  * `foldNamedValues` calls this once per suite, handing over the suite itself unrun and `rest`, the remaining
  * suites, also unrun. Running `rest` only after printing is what keeps each suite's report next to whatever its
@@ -30,14 +53,15 @@ private def noResults: List[TestResult] = empty
 private def runSuite(
       suiteName: String,
       suite: {Writer[List[TestResult]]} Unit,
-      rest: {} List[TestResult]): {Console, Environment} List[TestResult] = {
-   val results = runWriterToLog(suite)
+      rest: {} List[TestResult]): {Console, Environment} List[TestResult] =
+   if(selects(namesIn(arguments), suiteName)) {
+      val results = runWriterToLog(suite)
 
-   suiteReport(outputStyle, suiteName, results).foreach(printLine)
+      suiteReport(outputStyle, suiteName, results).foreach(printLine)
 
-   val laterResults = rest
+      val laterResults = rest
 
-   results ++ laterResults
-}
+      results ++ laterResults
+   } else rest
 
-private def outputStyle: {Environment} Style = if(environmentVariable("NO_COLOR").isSome) Plain else Colored
+private def outputStyle: {Environment} Style = styleOf(arguments, if(environmentVariable("NO_COLOR").isSome) Plain else Colored)

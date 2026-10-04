@@ -1,0 +1,73 @@
+import eliot.collection.List
+import eliot.test.Test
+import eliot.test.Report
+
+/**
+ * What the runner's command line means. **Pure**: the runner hands over the program's arguments and the style it would
+ * pick on its own, and everything else — which suites are asked for, how the report is dressed, which words were not
+ * understood — is decided here, so it is testable without running a suite.
+ *
+ * ```
+ * Runner                                    // every suite, coloured unless NO_COLOR is set
+ * Runner eliot.test.example                 // every suite in a package
+ * Runner eliot.test.ReportTests             // one suite, named by its module
+ * Runner --format=plain eliot.test.example  // options and names mix freely, in any order
+ * ```
+ *
+ * A **name** (any argument not starting with `--`) selects the suites whose module is that name or lies below it, by
+ * whole name parts: `eliot.test.example` selects `eliot.test.example.GreeterTests`, `eliot.test` does not select
+ * `eliot.testing.Anything`. Several names select the union. No names select everything.
+ *
+ * When names were given and no case ran in any suite they select, the runner says so and exits 2 instead of reporting
+ * "all clear".
+ *
+ * An **option** starts with `--`. `--format=plain` and `--format=colored` choose the report's style over what the
+ * environment suggested. Any other option is not understood, and the runner refuses to run rather than ignore it: an
+ * ignored `--only` would run every suite and look like a pass.
+ */
+
+/**
+ * The module names this command line asks for, in the order they were written; empty when it asks for everything.
+ */
+def namesIn(arguments: List[String]): List[String] = arguments.filter(argument -> !(isOption(argument)))
+
+/**
+ * Whether the suite named `suiteName` (the qualified name the runner gathered it under,
+ * `eliot.test.example.GreeterTests::testCases`) is selected by `names`.
+ */
+def selects(names: List[String], suiteName: String): Bool =
+   names.isEmpty || names.any(name -> covers(name, suiteName.before("::")))
+
+/**
+ * Whether the command line named suites and the run found no case in any of them. Nothing passing is not a pass: a
+ * misspelt name would otherwise print "all clear" and exit 0.
+ */
+def nothingMatched(names: List[String], counts: Tally): Bool =
+   !(names.isEmpty) && ((counts.passedCount + counts.failedCount) == 0)
+
+/**
+ * The style the command line chose with `--format=`, or `fallback` when it chose none. When it chose more than once,
+ * the first wins.
+ */
+def styleOf(arguments: List[String], fallback: Style): Style = arguments.findMap(styleNamedBy).foldOption(fallback, style -> style)
+
+/**
+ * The options this command line contains that the runner does not understand, in the order they were written.
+ */
+def unknownOptions(arguments: List[String]): List[String] =
+   arguments.filter(argument -> isOption(argument) && !(isKnown(argument)))
+
+private def isOption(argument: String): Bool = argument.startsWith("--")
+
+private def isKnown(option: String): Bool = styleNamedBy(option).isSome
+
+/**
+ * The style `option` names, if it is a `--format=` option naming one.
+ */
+private def styleNamedBy(option: String): Option[Style] =
+   if(option == "--format=plain", some(Plain)) else if(option == "--format=colored", some(Colored)) else none
+
+/**
+ * Whether `moduleName` is `name` or lies below it, compared by whole parts: the dot is part of the match.
+ */
+private def covers(name: String, moduleName: String): Bool = moduleName == name || moduleName.startsWith(name ++ ".")
