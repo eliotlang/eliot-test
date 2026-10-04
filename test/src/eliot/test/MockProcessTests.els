@@ -37,10 +37,21 @@ def testCases: Test = {
       result.exitCode shouldBe 1
       result.standardOutput shouldBe "one file changed"
    }
-   "run" should "match an arrangement by containment, not by the whole command line" in mocked {
+   "run" should "match an arrangement by some of the command's words, not the whole command line" in mocked {
       whenSpawning("--tags", succeeding("matched"))
 
       run(command("git").withArgument("ls-remote").withArgument("--tags"), here).standardOutput shouldBe "matched"
+   }
+   "run" should "not match an arrangement naming only part of a word" in mocked {
+      whenSpawning("clone", failing(128, "would have matched"))
+
+      run(command("git").withArgument("clone-ish"), here).exitCode shouldBe 0
+   }
+   "run" should "match an arrangement naming the directory it runs in" in mocked {
+      whenSpawning("/work$ git", succeeding("in /work"))
+
+      run(command("git").withArgument("status"), path("/work")).standardOutput shouldBe "in /work"
+      run(command("git").withArgument("status"), here).standardOutput shouldBe ""
    }
    "run" should "prefer the most recent arrangement, so a double can be re-armed mid-test" in mocked {
       whenSpawning("ls-remote", succeeding("first"))
@@ -90,13 +101,17 @@ def testCases: Test = {
 
       calls shouldBe "/build$ javac"
    }
+   "registerExitCode" should "record the code instead of exiting" in mocked {
+      registerExitCode(3)
+
+      calls shouldBe "registerExitCode 3"
+   }
 }
 
 private def here: Path = path(".")
 
 /**
- * Code under test for the observed-not-seeded case: clone only when the mirror is not there — the shape
- * every cache has, and the one a mock that never changes the world cannot check.
+ * Code under test: clone only when the mirror is not there yet.
  */
 private def cloneUnlessPresent: {Process, FileSystem, Throw[IoError]} Unit =
    unless(exists(path("/cache/mirror"))) clone

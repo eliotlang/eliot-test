@@ -1,0 +1,53 @@
+import eliot.collection.List
+import eliot.test.Assertion
+import eliot.test.Test
+import eliot.test.Report
+
+/**
+ * The report the runner prints, checked in its `Plain` style so the expected lines read as text.
+ */
+def testCases: Test = {
+   "tally" should "count passed and failed cases" in {
+      val counts = tally(mixedResults)
+
+      counts.passedCount shouldBe 2
+      counts.failedCount shouldBe 1
+   }
+   "allPassed" should "hold exactly when nothing failed" in {
+      tally(singleton(passing("a", "x"))).allPassed.shouldBeTrue
+      tally(mixedResults).allPassed.shouldBeFalse
+   }
+   "suiteReport" should "show the module, then one line per subject in order of first appearance" in {
+      suiteReport(Plain, "my.Tests::testCases", passingResults).joined("\n") shouldBe
+         "my.Tests\n ✔ alpha · 2 passed\n ✔ beta · 1 passed"
+   }
+   "suiteReport" should "detail each failure under its subject" in {
+      suiteReport(Plain, "my.Tests::testCases", mixedResults).joined("\n") shouldBe (
+         "my.Tests\n ✗ alpha · 1 passed, 1 failed\n | ✗ match\n |   expected 1\n |   actual   2\n ✔ beta · 1 passed"
+      )
+   }
+   "suiteReport" should "show a described failure's message and its original failure" in {
+      suiteReport(Plain, "my.Tests::testCases", singleton(failing("alpha", "x", Described("the port", "NotEqual(expected: 1, actual: 2)"))))
+         .joined("\n") shouldBe "my.Tests\n ✗ alpha · 0 passed, 1 failed\n | ✗ x\n |   the port\n |   because NotEqual(expected: 1, actual: 2)"
+   }
+   "summary" should "say all clear when every case passed" in {
+      summary(Plain, tally(passingResults)) shouldBe " ✔ all clear · 3 passed "
+   }
+   "summary" should "count the failures when any case failed" in {
+      summary(Plain, tally(mixedResults)) shouldBe " ✗ 1 failed · 2 passed "
+   }
+   "summary" should "be coloured in the Colored style" in {
+      summary(Colored, tally(passingResults)) shouldBe "\u001B[1;32m ✔ all clear · 3 passed \u001B[0m"
+   }
+}
+
+private def passingResults: List[TestResult] =
+   append(append(singleton(passing("alpha", "one")), passing("alpha", "two")), passing("beta", "three"))
+
+private def mixedResults: List[TestResult] =
+   append(append(singleton(passing("alpha", "one")), failing("alpha", "match", NotEqual("1", "2"))), passing("beta", "two"))
+
+private def passing(subject: String, phrase: String): TestResult = TestResult(TestCase(subject, phrase), Passed)
+
+private def failing(subject: String, phrase: String, error: AssertionError): TestResult =
+   TestResult(TestCase(subject, phrase), FailedWith(error))

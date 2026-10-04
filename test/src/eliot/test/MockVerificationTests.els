@@ -6,11 +6,8 @@ import eliot.test.Test
 import eliot.test.Mock
 
 /**
- * The verification vocabulary — what a test asks *about the calls* rather than about the answer.
- *
- * Each word is tested both ways: that it passes when it should, and that it fails when it should. The
- * failing direction is checked with `raising`, which is how a mocked body expects a raise — including one
- * from an assertion, since an assertion is a raise like any other here.
+ * The verification words — what a test asks about the calls rather than about the answer — each tested both
+ * ways: passing when it should, and failing (checked with `raising`) when it should.
  */
 def testCases: Test = {
    "calls" should "answer every call in order, joined" in mocked {
@@ -51,6 +48,20 @@ def testCases: Test = {
       printLine("hello there")
 
       wasCalled("hello")
+   }
+   "wasCalled" should "match whole words only" in mocked {
+      printLine("catalog")
+
+      wasNeverCalled("log")
+      wasNeverCalled("printLine cat")
+      wasCalled("printLine catalog")
+   }
+   "wasCalled" should "match words next to each other and in order" in mocked {
+      printLine("one two three")
+
+      wasCalled("two three")
+      wasNeverCalled("one three")
+      wasNeverCalled("three two")
    }
    "wasCalled" should "fail, naming the calls, when nothing matched" in mocked {
       printLine("hello")

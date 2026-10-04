@@ -2,61 +2,65 @@ import eliot.collection.List
 import eliot.test.Assertion
 
 /**
- * What a test case is *about*: the `subject` under test and the `should` phrase naming the expectation. It carries no
- * body — a case's body is run by `in`, where it stands, so what the framework ever holds is the case's name and what
- * running it answered.
+ * What a test case is about: the `subject` under test and the `should` phrase naming the expectation.
+ *
+ * ```eliot
+ * "greeting" should "address the name it was given"     // a TestCase("greeting", "address the name it was given")
+ * ```
  */
 data TestCase(subject: String, shouldPhrase: String)
 
 /**
- * A test case together with the verdict of running it. Plain data throughout: nothing here is a suspended computation,
- * so there is nothing left for the runner to run or to discharge.
+ * What running one test body came to: it `Passed`, or it `FailedWith` the assertion error it raised.
+ */
+data Outcome = Passed | FailedWith(assertionError: AssertionError)
+
+/**
+ * One test case and its outcome — what a suite collects, and what the runner reports.
  */
 data TestResult(testCase: TestCase, outcome: Outcome)
 
 /**
- * What running one test body answered: the `AssertionError` it raised, or `unit` when it raised nothing.
+ * Whether this case passed.
  */
-type Outcome = Either[AssertionError, Unit]
+def passed(result: TestResult): Bool = result.outcome match {
+   case Passed        -> true
+   case FailedWith(_) -> false
+}
 
 /**
- * **What a suite is**: a computation that registers its cases' verdicts, and nothing else. A suite is declared
- * `def testCases: Test = { … }`, and that is the whole of it — the row a suite has to perform is named here once
- * rather than written out at every suite.
- *
- * `Test` is a **row alias**: it lowers to `type Test = Unit`, and what crosses a use of it is the row's entries, so a
- * definition returning `Test` receives exactly what `{Writer[List[TestResult]]} Unit` would. Being a row alias it
- * also **composes** with a written-out row, which is how a suite says its cases may perform more than registration:
+ * The return type of a suite. Declare one per module, named `testCases`, and the runner finds it:
  *
  * ```eliot
- * def testCases: Test = { … }                    -- cases that assert and nothing else
- * def testCases: {Console} Test = { … }          -- cases that may print, for real
+ * def testCases: Test = {                       // the cases may assert, and nothing else
+ *    "shouldBe" should "pass for two equal strings" in {
+ *       "hello" shouldBe "hello"
+ *    }
+ * }
+ *
+ * def testCases: {Console} Test = { … }         // the cases may also print, for real
  * ```
  *
- * A row alias is a name like any other, so it crosses files, honours import scope, and is shadowed by a local
- * declaration of the same name. It works in **return position** only — `in`'s body slot below still writes its row
- * out, because a parameter row is *supplied* rather than received.
+ * A suite collects its cases' results through `Writer`, which is all `Test` stands for. Effects listed in front of
+ * it are what the cases may additionally perform.
  */
 type Test = {Writer[List[TestResult]]} Unit
 
 /**
- * Name a test case: the `subject` under test and the `should` phrase naming the expectation. The case is not complete
- * until `in` gives it a body.
+ * Name a test case. It becomes a test once `in` gives it a body.
  */
 infix none def should(subject: String, shouldPhrase: String): TestCase =
    TestCase(subject, shouldPhrase)
 
 /**
- * Run a named case's body and register its verdict into the enclosing suite.
+ * Run `body` right here and add its result to the enclosing suite.
  *
- * `in` **supplies** the assertion effect and is transparent to every other effect the body performs: `{Throw[AssertionError]}`
- * on the slot is the one entry `in` discharges, and every other operation the body performs is bound where it is
- * written — by the suite's own declarations, or by a `with` the body itself carries. So what a test may do is decided
- * by the suite's declared row and by nothing here: a bare `Test` suite admits only bodies that assert, a
- * `{Console} Test` suite admits bodies that print, and a body may bind its own doubles with `with`.
- *
- * Because the body is a *slot* rather than stored data, it is written where it stands — no test is collected unrun.
+ * A failed assertion stops this body only: its error becomes this case's `FailedWith` outcome, and the next case
+ * still runs. Any other effect the body performs must be allowed by the suite's return type, or supplied by a
+ * word such as `mocked`.
  */
 infix none below should
 def in(testCase: TestCase, body: {Throw[AssertionError]} Unit): Test =
-   tell(singleton(TestResult(testCase, runThrow(body))))
+   tell(singleton(TestResult(testCase, outcomeOf(runThrow(body)))))
+
+private def outcomeOf(raised: Either[AssertionError, Unit]): Outcome = raised.foldEither(error -> FailedWith(error), _ -> Passed)
