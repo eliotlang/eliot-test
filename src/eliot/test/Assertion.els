@@ -59,7 +59,7 @@ implement Show[AssertionError] {
 /**
  * A test body that passes without asserting anything.
  */
-def success: {Throw[AssertionError]} Unit = unit
+def success: Unit = unit
 
 /**
  * Fail the test with the given `reason`.
