@@ -44,10 +44,22 @@ def testCases: Test = {
       callCount("log") shouldBe 1
       callCount("readLine") shouldBe 0
    }
-   "wasCalled" should "pass when a call contained the fragment" in mocked {
+   "wasCalled" should "pass when a call matched the fragment" in mocked {
       printLine("hello there")
 
-      wasCalled("hello")
+      wasCalled("printLine hello")
+   }
+   "wasCalled" should "match what was called exactly, never one of its arguments" in mocked {
+      printLine("delete this")
+
+      wasNeverCalled("delete")
+      wasNeverCalled("print")
+      wasCalled("printLine delete")
+   }
+   "wasCalled" should "match what was called alone, whatever its arguments" in mocked {
+      printLine("anything at all")
+
+      wasCalled("printLine")
    }
    "wasCalled" should "match whole words only" in mocked {
       printLine("catalog")
@@ -59,35 +71,35 @@ def testCases: Test = {
    "wasCalled" should "match words next to each other and in order" in mocked {
       printLine("one two three")
 
-      wasCalled("two three")
-      wasNeverCalled("one three")
-      wasNeverCalled("three two")
+      wasCalled("printLine two three")
+      wasNeverCalled("printLine one three")
+      wasNeverCalled("printLine three two")
    }
    "wasCalled" should "fail, naming the calls, when nothing matched" in mocked {
       printLine("hello")
 
-      raising("expected a call containing 'goodbye'", wasCalled("goodbye"))
+      raising("expected a call matching 'printLine goodbye'", wasCalled("printLine goodbye"))
    }
    "wasNeverCalled" should "pass when nothing matched" in mocked {
       printLine("hello")
 
-      wasNeverCalled("goodbye")
+      wasNeverCalled("printLine goodbye")
    }
    "wasNeverCalled" should "fail, showing what was found, when something matched" in mocked {
       printLine("hello")
 
-      raising("expected no call containing 'hello'", wasNeverCalled("hello"))
+      raising("expected no call matching 'printLine hello'", wasNeverCalled("printLine hello"))
    }
    "wasCalledOnce" should "pass for exactly one matching call" in mocked {
       printLine("only")
 
-      wasCalledOnce("only")
+      wasCalledOnce("printLine only")
    }
    "wasCalledOnce" should "fail for a second matching call" in mocked {
       printLine("twice")
       printLine("twice")
 
-      raising("exactly 1 calls containing 'twice'", wasCalledOnce("twice"))
+      raising("exactly 1 call matching 'printLine twice'", wasCalledOnce("printLine twice"))
    }
    "wasCalledTimes" should "pass for exactly that many matching calls" in mocked {
       printLine("a")
@@ -123,7 +135,7 @@ def testCases: Test = {
       printLine("a")
       printLine("a")
 
-      raising("at most 1 calls", wasCalledAtMost(1, "printLine a"))
+      raising("at most 1 call matching", wasCalledAtMost(1, "printLine a"))
    }
    "wereCalledInOrder" should "pass when the calls happened in that order" in mocked {
       printLine("first")
@@ -159,13 +171,47 @@ def testCases: Test = {
       raising("unexpected calls: log a surprise", onlyTheseWereCalled(singleton("printLine")))
    }
    "forgetCalls" should "clear the calls while keeping the arrangements" in mocked {
-      whenSpawning("ls-remote", succeeding("v1.0"))
+      whenSpawning("git ls-remote", succeeding("v1.0"))
       run(command("git").withArgument("ls-remote"), path("."))
 
       forgetCalls
 
       nothingWasCalled
       run(command("git").withArgument("ls-remote"), path(".")).standardOutput shouldBe "v1.0"
+   }
+   "a blank fragment" should "fail every verification given one, rather than match everything or nothing" in mocked {
+      printLine("something")
+
+      raising("names nothing that was called", wasCalled(""))
+      raising("names nothing that was called", wasNeverCalled("  "))
+      raising("names nothing that was called", wasCalledTimes(1, ""))
+      raising("names nothing that was called", wereCalledInOrder(append(singleton("printLine"), "")))
+      raising("names nothing that was called", onlyTheseWereCalled(singleton("")))
+   }
+   "a fragment naming only a directory" should "count as blank" in mocked {
+      raising("names nothing that was called", wasNeverCalled("/work$"))
+   }
+   "a fragment naming a directory" should "match only a process spawned there, where one naming none matches any call" in mocked {
+      printLine("x")
+      run(command("printLine").withArgument("x"), path("/work"))
+
+      wasCalledTimes(2, "printLine x")
+      wasCalledOnce("/work$ printLine x")
+      wasNeverCalled("/elsewhere$ printLine")
+   }
+   "recordedCalls" should "answer each call with its operation and arguments apart" in mocked {
+      recordCall("tag", singleton("a b"))
+      recordCall("tag", append(singleton("a"), "b"))
+
+      recordedCalls.map(call -> show(call.callArguments.size)).joined(" ") shouldBe "1 2"
+      calls shouldBe "tag a b; tag a b"
+   }
+   "recordedCalls" should "answer a spawned process with its directory and command line" in mocked {
+      run(command("git").withArgument("fetch"), path("/work"))
+
+      recordedCalls.map(call -> call.callee).joined(" ") shouldBe "git"
+      recordedCalls.map(call -> call.callArguments.joined(" ")).joined("; ") shouldBe "fetch"
+      recordedCalls.map(call -> call.callDirectory orElse "<none>").joined(" ") shouldBe "/work"
    }
    "raising" should "pass when the body raised what was expected" in mocked {
       raising("boom", failedWith("boom"))
@@ -255,4 +301,4 @@ private def printedThenFailed: {Console, Throw[AssertionError]} Unit = {
 /**
  * A shared arrangement: an ordinary `{Mocking}` definition, called at the top of a body.
  */
-private def twoLinesReady: {Mocking} Unit = whenSpawning("ls-remote", succeeding("v1.0\nv1.1"))
+private def twoLinesReady: {Mocking} Unit = whenSpawning("git ls-remote", succeeding("v1.0\nv1.1"))

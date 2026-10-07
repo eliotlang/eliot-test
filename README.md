@@ -64,18 +64,23 @@ import eliot.test.Mock
 ```
 
 - **Arranging:** `whenSpawning(fragment, succeeding(out) | failing(code, err) | exiting(code, out))`,
-  `whenSpawningCreates`, `whenSpawningWrites`, `whenReading`, `withFile`, `withDirectory`, `withVariable`, `withArguments`,
+  `whenSpawningInTurn(fragment, results)` (one answer per run, the last repeating), `whenSpawningCreates`, `whenSpawningWrites`, `whenReading`, `withFile`, `withDirectory`, `withVariable`, `withArguments`,
   `withWorkingDirectory`. The most recent arrangement wins.
 - **Verifying:** `wasCalled`, `wasNeverCalled`, `wasCalledOnce`, `wasCalledTimes`, `wasCalledAtLeast`,
   `wasCalledAtMost`, `wereCalledInOrder`, `nothingWasCalled`, `onlyTheseWereCalled`, plus `calls`,
-  `callsMatching`, `callCount`, `lastCall` and `forgetCalls`.
+  `callsMatching`, `callCount`, `lastCall` and `forgetCalls`. `recordedCalls` answers the calls themselves, each a
+  `Call(callee, callArguments, callDirectory)`, for checking one argument rather than the whole line.
 - **Inspecting the file system:** `fileContentAt`, `existsAt` and `filesUnder` read the in-memory tree **without
   recording a call**. Check what the code under test wrote with these rather than with `readFile`, `exists` or
   `walk`, which are recorded like any other call and would change what the verifications see.
-- **Matching:** a fragment matches a call when its words appear in the call next to each other and in order.
-  `wasCalled("git clone")` matches `/work$ git clone --mirror x`; `wasCalled("log")` does not match
-  `printLine catalog`. A call reads as the operation and its arguments (`printLine hello`, `readFile /etc/hosts`),
-  and a process as its directory, `$` and the command line (`/work$ git fetch`).
+- **Matching:** a fragment's first word is what was called and must be exactly that — the operation, or a
+  process's program — and the words after it must appear among the call's arguments, next to each other and in
+  order. `wasCalled("git clone")` matches `/work$ git clone --mirror x`, `wasCalled("printLine cat")` does not match
+  `printLine catalog`, and `wasCalled("delete")` does not match `printLine delete this`. A first word ending in `$`
+  names a directory: `/work$ git fetch` matches only a process run in `/work`. A blank fragment matches nothing; a
+  verification given one fails the case, and a spawn while one is arranged fails it too. A call reads as the
+  operation and its arguments (`printLine hello`, `readFile /etc/hosts`), and a process as its directory, `$` and
+  the command line (`/work$ git fetch`).
 - **The file system** is an in-memory tree: what the test put there plus what the code under test wrote. A
   directory holding a file exists even if nobody created it.
 - **Limitation:** the doubles cannot raise `IoError` yet, because the standard library offers no way to create

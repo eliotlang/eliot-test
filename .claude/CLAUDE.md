@@ -76,16 +76,20 @@ section is how the pieces fit. Six modules, each owning one concern and keeping 
 - `eliot.test.Mock` — the doubles and the words a test writes (README, "Mocking"). Public: `mocked`, the
   arranging and verifying words, the inspecting words (`fileContentAt`, `existsAt`, `filesUnder` — the tree, read
   through `Calls`, recording nothing), `recordCall` (a project's own double journals its operations with it), the
-  effects `Mocking` and `Calls` (a project names them in rows — eliot-build's `TableGit` declares `Mocking`), and the
-  five named implementations. `Calls` answers only public types — each call's description, each path with its
-  content — while `Mocking`'s operations take the private ones, which only the words construct. **Private**: everything they keep —
+  effects `Mocking` and `Calls` (a project names them in rows — eliot-build's `TableGit` declares `Mocking`), the
+  five named implementations, and **`Call(callee, callArguments, callDirectory)`**, one record for every call: an
+  operation is its name and arguments in no directory, a spawned process its program, the rest of its command line
+  and `some` directory. `Calls` answers only public types — each `Call`, each path with its content — while
+  `Mocking`'s operations take the private ones, which only the words construct. **Private**: everything they keep —
   `Recording(journal, arrangements, fileTree, pendingInput)` in `State[Recording]`, which `mocked` supplies and
-  discharges; `Call = Asked(operationName, operationArguments) | Spawned(spawnDirectory, commandLine)`; `Arrangement` (answers:
-  spawns, creations, variables, arguments, working directory); and `Entry = FileEntry | DirectoryEntry`, the
+  discharges; `Arrangement` (answers: spawns — each a list used up one run at a time, the last repeating —
+  creations, variables, arguments, working directory); and `Entry = FileEntry | DirectoryEntry`, the
   in-memory file tree, kept apart from the arrangements. Two rules carry the design:
-  - **Matching is by words**, in one function, `matches`: a fragment matches when its words appear in the call's
-    description next to each other and in order (both sides space-padded, then `contains`). `whenSpawning` and
-    every verification use it, against the same description — `printLine hello`, `/work$ git fetch`.
+  - **Matching is by what was called, then by words**, in one function, `matches`: a fragment's first word must
+    equal the `callee` exactly, and the rest must appear among the arguments' words next to each other and in order
+    (both sides space-padded, then `contains`); a first word ending `$` names the directory, which then must equal
+    `callDirectory`. A blank fragment matches nothing — the verifications refuse one, and the process double fails
+    the case at a spawn while one is arranged. `whenSpawning…` and every verification use it.
   - **Every double's operation is `recorded(update, answer)`**: change the recording, answer from the one before
     the call. `answering`, `changingFiles` and `noting` are its three shapes.
   The tree implies directories: a directory exists when something is inside it, `listDirectory` answers the first
@@ -209,7 +213,7 @@ which were carrier artefacts.
   why `Mock`'s fields carry longer names than its parameters.
 
 `./eliotw test` prints, per suite, its module name and one `✔`/`✗` line per subject with each failure detailed
-underneath, then one summary line for the whole run. **169 cases, all passing.**
+underneath, then one summary line for the whole run. **183 cases, all passing.**
 
 > **Compiler version.** Needs eliot `v0.7`: the base's `when`/`unless`, `someIf`, `filterMap`/`findMap`,
 > `includes`, `Eq[Option]` and `first`/`second`, which the assertions and the doubles are written with, and the

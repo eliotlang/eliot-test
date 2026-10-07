@@ -50,8 +50,8 @@ has the constructor, which also lets a test arrange a failure and assert that th
   with whatever the production code really logged. The same leak ran the other way: the public
   `recordedCalls` answered a `List[Call]` of a private type. Task 6, done: `recordCall`, and `Calls` answers
   descriptions.
-- **One answer per command.** Code that runs one command twice in a single act — a retry, a fallback — cannot be
-  answered "fail, then succeed"; re-arming only works between acts. Task 8.
+- **One answer per command.** Code that runs one command twice in a single act — a retry, a fallback — could not be
+  answered "fail, then succeed"; re-arming only works between acts. Task 8, done: `whenSpawningInTurn`.
 - **A command could only leave directories behind.** `whenSpawningCreates` could not model `curl -o file` or
   `unzip` producing files, which is what eliot-build's asset hashing then reads. Task 9, done: `whenSpawningWrites`.
 - **`writeFile` records the path, not the content,** so what was written is only checked by reading it back —
@@ -60,13 +60,15 @@ has the constructor, which also lets a test arrange a failure and assert that th
 
 ## 3. Weirdnesses in how it is built
 
-- **One namespace for operations and arguments.** Matching is over the call's description, so
-  `wasCalled("delete")` matches `printLine delete this`, `whenSpawning("git fetch")` matches
-  `git commit -m "git fetch"`, an argument `"a b"` is indistinguishable from two, and a directory with a space
-  or an argument ending `$` confuses the `dir$ command` form. eliot-build relies on the blur:
-  `wasCalledOnce("cloneMirror")` matches `log cloneMirror …`. Task 7.
-- **A blank fragment matches everything** (`isBlank(fragment) || …`): `wasNeverCalled("")` always fails and
-  `whenSpawning("", …)` is a catch-all. Neither is documented. Task 7.
+- **One namespace for operations and arguments.** Matching was over the call's description, so
+  `wasCalled("delete")` matched `printLine delete this`, and a directory with a space or an argument ending `$`
+  confused the `dir$ command` form. eliot-build relied on the blur: `wasCalledOnce("cloneMirror")` matched
+  `log cloneMirror …`. Task 7, done: the first word is matched against what was called. What remains: the words
+  after it float over the arguments, so `whenSpawning("git fetch")` still matches `git commit -m "git fetch"` and
+  `"a b"` still matches as two arguments, and a fragment with no directory matches an operation and a program of the
+  same name alike.
+- **A blank fragment matched everything** (`isBlank(fragment) || …`): `wasNeverCalled("")` always failed and
+  `whenSpawning("", …)` was a catch-all. Task 7, done: it matches nothing and is refused.
 - **Three re-arming rules.** `whenSpawning` is most-recent-wins, `whenSpawningCreates` applied *every* matching
   arrangement, and `whenReading` replaces the input queue. Task 9 made the second most-recent-wins too;
   `whenReading` still replaces, which for a queue is the same thing.
@@ -112,9 +114,23 @@ In rough priority order. "eliot" marks a task that needs an eliot change and a t
    prefix (`"log tags …"` is now `"tags …"`). With task 9's `downloading` arrangement in `ShellAssetsTests`, the
    suite is 319 green. It lands when eliot-build moves past eliot-test `v0.2`, together with task 9's change;
    neither compiles against `v0.2`.
-7. Structured matching: the operation matched on its own, an argument holding spaces quoted in the
-   description, and a blank fragment refused rather than matching everything.
-8. Answers in turn: `whenSpawningInTurn(fragment, results)`, consumed like the console input.
+7. **Done (2026-10-07).** Structured matching. `Call` is one public record, `Call(callee, callArguments,
+   callDirectory)` — an operation in no directory, a process as its program, the rest of its command line and its
+   directory — and `Calls.recordedCalls` answers it, which also closes task 6's last leak. A fragment's first word
+   must equal the callee, an optional `<dir>$` before it must equal the directory, and the rest float over the
+   arguments' words. A blank fragment matches nothing: every verification refuses one, and the process double fails
+   the case at a spawn while one is arranged (an arranging word cannot fail, being `{Mocking}` alone). The
+   argument description is not quoted — `calls` reads as before — so `"a b"` and `a`, `b` still read and match
+   alike; `recordedCalls` tells them apart. `countMismatch` now says "1 call".
+
+   **What eliot-build changes when it moves past this tag:** every `whenSpawning…` fragment names the program
+   (`"ls-remote"` becomes `"git ls-remote"`, `"show v1.9:eliot.pkg"` becomes `"git show v1.9:eliot.pkg"`), and a
+   verification of a spawn does too (`wasNeverCalled("fetch")` asks about `TableGit`'s `fetch` operation, never a
+   `git fetch`). `recordCall` operations (`cloneMirror`, `addWorktree`) and `printLine`/`delete` fragments are
+   unchanged.
+8. **Done (2026-10-07).** `whenSpawningInTurn(fragment, results)`: the most recent matching arrangement answers
+   its next result and keeps the last; `whenSpawning` is it with one result. What a run leaves behind follows the
+   answer that run got.
 9. **Done (2026-10-07).** `whenSpawningWrites(fragment, file, content)` leaves a file behind; what a command
    leaves (a directory or a file) is left only when it exits 0, and by the most recent matching arrangement of
    either word. §1h.
