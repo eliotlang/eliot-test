@@ -150,7 +150,7 @@ def withWorkingDirectory(at: Path): {Mocking} Unit = arranged(WorkingIn(keyOf(at
  * calls shouldBe "readLine; printLine Hello, Bob!"
  * ```
  */
-def calls: {Calls} String = recordedCalls.map(described).joined("; ")
+def calls: {Calls} String = recordedCalls.joined("; ")
 
 /**
  * The calls matching `fragment`, joined the same way as `calls` — for asserting on the arguments of a call
@@ -160,12 +160,12 @@ def calls: {Calls} String = recordedCalls.map(described).joined("; ")
  * callsMatching("git clone") shouldBe ".$ git clone --mirror https://github.com/x/foo target/cache"
  * ```
  */
-def callsMatching(fragment: String): {Calls} String = matchingCalls(fragment).map(described).joined("; ")
+def callsMatching(fragment: String): {Calls} String = matchingCalls(fragment).joined("; ")
 
 /**
  * The most recent call, or `"<none>"` when nothing has been called.
  */
-def lastCall: {Calls} String = recordedCalls.last.mapOption(described) orElse "<none>"
+def lastCall: {Calls} String = recordedCalls.last orElse "<none>"
 
 /**
  * How many calls matched `fragment`.
@@ -177,6 +177,24 @@ def callCount(fragment: String): {Calls} Int = matchingCalls(fragment).size
  * on its own.
  */
 def forgetCalls: {Mocking} Unit = forgotten
+
+/**
+ * Record a call to `operation` with `arguments`, as one of the framework's own doubles records its calls — for a
+ * project's double of its *own* effect, so its operations are verified with the same words, in the same journal,
+ * in the order they happened among everything else:
+ *
+ * ```eliot
+ * implement tableGit: Git {
+ *    def fetch(mirror: Mirror): {Mocking} Unit = recordCall("fetch", singleton(show(mirror.mirrorDirectory)))
+ *    …
+ * }
+ *
+ * wasCalledOnce("fetch target/cache/x")
+ * ```
+ *
+ * The call reads like every other: the operation, then its arguments, separated by spaces.
+ */
+def recordCall(operation: String, arguments: List[String]): {Mocking} Unit = journaled(Asked(operation, arguments))
 
 /**
  * Verify that at least one call matched `fragment`.
@@ -238,7 +256,7 @@ def nothingWasCalled: {Calls, Throw[AssertionError]} Unit =
 def onlyTheseWereCalled(fragments: List[String]): {Calls, Throw[AssertionError]} Unit = {
    val unexpected = recordedCalls.filter(call -> !(fragments.any(fragment -> matches(fragment, call))))
 
-   unless(unexpected.isEmpty) fail("unexpected calls: " ++ unexpected.map(described).joined("; "))
+   unless(unexpected.isEmpty) fail("unexpected calls: " ++ unexpected.joined("; "))
 }
 
 /**
@@ -255,19 +273,19 @@ def onlyTheseWereCalled(fragments: List[String]): {Calls, Throw[AssertionError]}
  *
  * `readFile` through the double answers the same content, and is recorded as the code under test's calls are.
  */
-def fileContentAt(at: Path): {Calls} Option[String] = recordedFiles.findMap(entry -> fileContent(keyOf(at), entry))
+def fileContentAt(at: Path): {Calls} Option[String] = recordedTree.findMap(entry -> fileContent(keyOf(at), entry))
 
 /**
  * Whether anything — a file, or a directory, put there or implied by something inside it — is at `at` now, read
  * without recording a call. `exists` through the double answers the same and is recorded.
  */
-def existsAt(at: Path): {Calls} Bool = existsIn(keyOf(at), recordedFiles)
+def existsAt(at: Path): {Calls} Bool = existsIn(keyOf(at), recordedTree)
 
 /**
  * The files inside `directory` now, however deep, read without recording a call. `walk` through the double
  * answers the same and is recorded.
  */
-def filesUnder(directory: Path): {Calls} List[Path] = filePathsUnder(keyOf(directory), recordedFiles).asPaths
+def filesUnder(directory: Path): {Calls} List[Path] = filePathsUnder(keyOf(directory), recordedTree).asPaths
 
 /**
  * Arranging, as an effect. The `when…` and `with…` words above perform it; a shared arrangement is an ordinary
@@ -282,6 +300,8 @@ effect Mocking {
 
    def queued(lines: List[String]): Unit
 
+   def journaled(call: Call): Unit
+
    def forgotten: Unit
 }
 
@@ -293,23 +313,26 @@ implement Mocking {
 
    def queued(lines: List[String]): {State[Recording]} Unit = updateState(r -> r.setPendingInput(lines))
 
+   def journaled(call: Call): {State[Recording]} Unit = noting(call)
+
    def forgotten: {State[Recording]} Unit = updateState(r -> r.setJournal(empty))
 }
 
 /**
- * Verifying, as an effect: what the doubles have been asked, oldest first, and what the file system holds now.
- * Reading either records nothing. A test names the effect and reads it through the words above.
+ * Verifying, as an effect: what the doubles have been asked, oldest first, each call as it reads — `printLine
+ * hello`, `/work$ git fetch` — and what the file system holds now, a path with its content, or with none for a
+ * directory. Reading either records nothing. A test names the effect and reads it through the words above.
  */
 effect Calls {
-   def recordedCalls: List[Call]
+   def recordedCalls: List[String]
 
-   def recordedFiles: List[Entry]
+   def recordedFiles: List[Pair[String, Option[String]]]
 }
 
 implement Calls {
-   def recordedCalls: {State[Recording]} List[Call] = state.journal
+   def recordedCalls: {State[Recording]} List[String] = state.journal.map(described)
 
-   def recordedFiles: {State[Recording]} List[Entry] = state.fileTree
+   def recordedFiles: {State[Recording]} List[Pair[String, Option[String]]] = state.fileTree.map(pathAndContent)
 }
 
 /**
@@ -509,12 +532,17 @@ private def described(call: Call): String = call match {
  * Whether `fragment`'s words appear in the call's description, next to each other and in order. Padding both
  * sides with a space is what makes `log` match the word `log` and not the end of `catalog`.
  */
-private def matches(fragment: String, call: Call): Bool =
-   isBlank(fragment) || contains(paddedWords(fragment), paddedWords(described(call)))
+private def matches(fragment: String, call: String): Bool =
+   isBlank(fragment) || contains(paddedWords(fragment), paddedWords(call))
 
 private def paddedWords(text: String): String = " " ++ words(text).joined(" ") ++ " "
 
-private def matchingCalls(fragment: String): {Calls} List[Call] = recordedCalls.filter(call -> matches(fragment, call))
+private def matchingCalls(fragment: String): {Calls} List[String] = recordedCalls.filter(call -> matches(fragment, call))
+
+/**
+ * The file system as `recordedFiles` answers it, read back into the tree's own entries.
+ */
+private def recordedTree: {Calls} List[Entry] = recordedFiles.map(entryOf)
 
 private def callsOrNone: {Calls} String = if(recordedCalls.isEmpty) "none" else calls
 
@@ -528,7 +556,7 @@ private def countMismatch(qualifier: String, count: Int, fragment: String): {Cal
  * The fragments still waiting after walking through `history`: each call matching the first waiting fragment
  * removes it. Empty exactly when the fragments were all seen, in order.
  */
-private def fragmentsNotSeenInOrder(fragments: List[String], history: List[Call]): List[String] =
+private def fragmentsNotSeenInOrder(fragments: List[String], history: List[String]): List[String] =
    history.foldLeft(fragments, call -> waiting -> if(waiting.head.anyOption(next -> matches(next, call))) waiting.tail else waiting)
 
 // ---- Processes --------------------------------------------------------------------------------------------------
@@ -553,7 +581,7 @@ private def leftBehind(spawned: Call, r: Recording): Option[Entry] =
    if(resultFor(spawned, r).exitCode == 0) r.arrangements.findMap(arrangement -> createdBy(spawned, arrangement)) else none
 
 private def createdBy(spawned: Call, arrangement: Arrangement): Option[Entry] = arrangement match {
-   case Creating(fragment, created) -> someIf(matches(fragment, spawned)) created
+   case Creating(fragment, created) -> someIf(matches(fragment, described(spawned))) created
    case _                           -> none
 }
 
@@ -561,7 +589,7 @@ private def resultFor(spawned: Call, r: Recording): ProcessResult =
    r.arrangements.findMap(arrangement -> resultIfMatching(spawned, arrangement)) orElse succeeding("")
 
 private def resultIfMatching(spawned: Call, arrangement: Arrangement): Option[ProcessResult] = arrangement match {
-   case Spawning(fragment, result) -> someIf(matches(fragment, spawned)) result
+   case Spawning(fragment, result) -> someIf(matches(fragment, described(spawned))) result
    case _                          -> none
 }
 
@@ -593,6 +621,14 @@ private def withoutTrailingSlash(text: String): String =
    if(endsWith("/", text) && length(text) > 1) take(length(text) - 1, text) else text
 
 private def asPaths(keys: List[String]): List[Path] = keys.map(path)
+
+private def pathAndContent(entry: Entry): Pair[String, Option[String]] = entry match {
+   case FileEntry(at, content) -> Pair(at, some(content))
+   case DirectoryEntry(at)     -> Pair(at, none)
+}
+
+private def entryOf(recorded: Pair[String, Option[String]]): Entry =
+   recorded.second.mapOption(content -> FileEntry(recorded.first, content)) orElse DirectoryEntry(recorded.first)
 
 private def entryPath(entry: Entry): String = entry match {
    case FileEntry(at, _)    -> at
