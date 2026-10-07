@@ -33,7 +33,9 @@ import eliot.test.Assertion
  *
  * **What the doubles cannot do yet** is fail: the standard library's `IoError` has no constructor a test could
  * call, so reading a file that does not exist answers `""` instead of raising, and no arrangement can make a call
- * raise an `IoError`.
+ * raise an `IoError`. Where answering would hide a difference from the platform that a test must not rely on —
+ * deleting a non-empty directory or a path nothing is at, folding a file's code points — the double fails the case
+ * instead, naming the call.
  */
 
 /**
@@ -294,8 +296,12 @@ implement mockProcess: Process {
 /**
  * The file system double, over the in-memory tree. Every operation is recorded as its name and the path.
  *
- * `foldCodePoints` records the call and answers `initial` unchanged: the standard library offers no way to reach a
- * string's code points from Eliot code.
+ * Lines end the way the platform reads them: at `\n`, `\r\n` or `\r`, and a final line ending ends the last line
+ * rather than starting an empty one.
+ *
+ * `delete` removes one thing, as the platform does: a directory with something inside it, or a path nothing is
+ * at, fails the case. `foldCodePoints` fails the case too, after recording the call: the standard library offers
+ * no way to reach a string's code points from Eliot code, and answering `initial` would read as a right answer.
  */
 implement mockFileSystem: FileSystem {
    def readFile(path: Path): {State[Recording]} String =
@@ -310,8 +316,12 @@ implement mockFileSystem: FileSystem {
    def foldLines[B](initial: B, step: B => String => B, path: Path): {State[Recording]} B =
       answering(about("foldLines", path), r -> linesAt(keyOf(path), r.fileTree).foldLeft(initial, line -> acc -> step(acc)(line)))
 
-   def foldCodePoints[B](initial: B, step: B => Int => B, path: Path): {State[Recording]} B =
-      answering(about("foldCodePoints", path), _ -> initial)
+   def foldCodePoints[B](initial: B, step: B => Int => B, path: Path): {State[Recording], Throw[AssertionError]} B = {
+      noting(about("foldCodePoints", path))
+      fail(described(about("foldCodePoints", path)) ++ ": the mocked FileSystem cannot fold a file's code points")
+
+      initial
+   }
 
    def readLines(path: Path): {State[Recording]} List[String] =
       answering(about("readLines", path), r -> linesAt(keyOf(path), r.fileTree))
@@ -331,8 +341,13 @@ implement mockFileSystem: FileSystem {
    def createDirectories(path: Path): {State[Recording]} Unit =
       changingFiles(about("createDirectories", path), tree -> placedIn(DirectoryEntry(keyOf(path)), tree))
 
-   def delete(path: Path): {State[Recording]} Unit =
-      changingFiles(about("delete", path), tree -> removedFrom(keyOf(path), tree))
+   def delete(path: Path): {State[Recording], Throw[AssertionError]} Unit = {
+      val tree = state.fileTree
+
+      changingFiles(about("delete", path), t -> removedFrom(keyOf(path), t))
+      unless(existsIn(keyOf(path), tree)) refused(about("delete", path), "there is nothing at that path")
+      unless(entriesOf(keyOf(path), tree).isEmpty) refused(about("delete", path), "the directory is not empty")
+   }
 }
 
 /**
@@ -549,10 +564,15 @@ private def placedIn(entry: Entry, tree: List[Entry]): List[Entry] =
    prepend(tree.filter(other -> entryPath(other) != entryPath(entry)), entry)
 
 /**
- * `tree` without `at` and everything inside it.
+ * `tree` without the entry at `at`. Whatever is inside it stays: `delete` refuses a directory that is not empty.
  */
-private def removedFrom(at: String, tree: List[Entry]): List[Entry] =
-   tree.filter(entry -> !(entryPath(entry) == at || isInside(at, entryPath(entry))))
+private def removedFrom(at: String, tree: List[Entry]): List[Entry] = tree.filter(entry -> entryPath(entry) != at)
+
+/**
+ * Fail the case where the platform's `FileSystem` would raise an `IoError`, which a double cannot construct yet.
+ */
+private def refused(call: Call, reason: String): {Throw[AssertionError]} Unit =
+   fail(described(call) ++ ": " ++ reason ++ "; the platform raises an IoError here")
 
 private def contentAt(at: String, tree: List[Entry]): String = tree.findMap(entry -> fileContent(at, entry)) orElse ""
 
@@ -561,8 +581,17 @@ private def fileContent(at: String, entry: Entry): Option[String] = entry match 
    case _                            -> none
 }
 
-private def linesAt(at: String, tree: List[Entry]): List[String] =
-   if(contentAt(at, tree) == "") empty else split("\n", contentAt(at, tree))
+private def linesAt(at: String, tree: List[Entry]): List[String] = linesOf(contentAt(at, tree))
+
+/**
+ * `content`'s lines as the platform reads them: `\n`, `\r\n` and `\r` each end a line, and a line ending at the
+ * very end ends the last line rather than starting an empty one — `"a\nb\n"` is two lines, `"\n"` one empty line.
+ */
+private def linesOf(content: String): List[String] = {
+   val unified = content.replace("\r\n", "\n").replace("\r", "\n")
+
+   if(unified == "") empty else if(endsWith("\n", unified)) split("\n", unified).dropLast else split("\n", unified)
+}
 
 /**
  * Something exists at `at` when it was put there, or when anything is inside it.

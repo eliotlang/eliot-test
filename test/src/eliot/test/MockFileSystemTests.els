@@ -44,6 +44,26 @@ def testCases: Test = {
 
       readLines(path("/tmp/three")).joined(",") shouldBe "a,b,c"
    }
+   "readLines" should "end the last line at a final line ending rather than start an empty one" in mocked {
+      withFile(path("/tmp/ended"), "a\nb\n")
+
+      readLines(path("/tmp/ended")).joined(",") shouldBe "a,b"
+   }
+   "readLines" should "read a lone line ending as one empty line" in mocked {
+      withFile(path("/tmp/blank"), "\n")
+
+      readLines(path("/tmp/blank")).size shouldBe 1
+   }
+   "readLines" should "keep an empty line in the middle" in mocked {
+      withFile(path("/tmp/gap"), "a\n\nb")
+
+      readLines(path("/tmp/gap")).joined(",") shouldBe "a,,b"
+   }
+   "readLines" should "end a line at CR LF and at a lone CR, as well as at LF" in mocked {
+      withFile(path("/tmp/windows"), "a\r\nb\rc\r\n")
+
+      readLines(path("/tmp/windows")).joined(",") shouldBe "a,b,c"
+   }
    "readLines" should "answer nothing for an empty file" in mocked {
       withFile(path("/tmp/empty"), "")
 
@@ -54,11 +74,13 @@ def testCases: Test = {
 
       foldLines("", acc -> line -> acc ++ line, path("/tmp/three")) shouldBe "abc"
    }
-   "foldCodePoints" should "record the call and leave the accumulator, which is all it can honestly do" in mocked {
-      withFile(path("/tmp/three"), "abc")
+   "foldLines" should "see the lines readLines sees" in mocked {
+      withFile(path("/tmp/ended"), "a\r\nb\n")
 
-      foldCodePoints(7, acc -> _ -> acc + 1, path("/tmp/three")) shouldBe 7
-      wasCalled("foldCodePoints /tmp/three")
+      foldLines("", acc -> line -> acc ++ "[" ++ line ++ "]", path("/tmp/ended")) shouldBe "[a][b]"
+   }
+   "foldCodePoints" should "fail the case, naming the call, rather than answer as if it had folded" in {
+      (refusalFailures.at(0) orElse "<none>") shouldBe "Failed(foldCodePoints /tmp/three: the mocked FileSystem cannot fold a file's code points)"
    }
    "exists" should "be true for an arranged file and false for anything else" in mocked {
       withFile(path("/tmp/there"), "x")
@@ -121,13 +143,24 @@ def testCases: Test = {
 
       exists(path("/tmp/doomed")).shouldBeFalse
    }
-   "delete" should "remove a directory together with everything inside it" in mocked {
-      withFile(path("/tmp/dir/one"), "1")
+   "delete" should "remove an empty directory" in mocked {
       withDirectory(path("/tmp/dir"))
       delete(path("/tmp/dir"))
 
       exists(path("/tmp/dir")).shouldBeFalse
-      exists(path("/tmp/dir/one")).shouldBeFalse
+   }
+   "delete" should "leave what is beside the deleted path" in mocked {
+      withFile(path("/tmp/dir/one"), "1")
+      withFile(path("/tmp/dir/two"), "2")
+      delete(path("/tmp/dir/one"))
+
+      exists(path("/tmp/dir/two")).shouldBeTrue
+   }
+   "delete" should "fail the case for a directory with something inside it, as the platform refuses it" in {
+      (refusalFailures.at(1) orElse "<none>") shouldBe "Failed(delete /tmp/dir: the directory is not empty; the platform raises an IoError here)"
+   }
+   "delete" should "fail the case for a path nothing is at, as the platform refuses it" in {
+      (refusalFailures.at(2) orElse "<none>") shouldBe "Failed(delete /tmp/nowhere: there is nothing at that path; the platform raises an IoError here)"
    }
    "writeFile" should "replace what the file held before" in mocked {
       withFile(path("/tmp/out"), "old")
@@ -142,4 +175,36 @@ def testCases: Test = {
 
       calls shouldBe "exists /a; writeFile /b; delete /b"
    }
+}
+
+/**
+ * Cases the double refuses, run as a suite of their own so that the failures can be read: a refusal fails the
+ * case it happens in, where `raising` around the call cannot see it, because the double's failure is bound where
+ * `mocked` binds the double.
+ */
+private def refusals: Test = {
+   "foldCodePoints" should "be refused" in mocked {
+      withFile(path("/tmp/three"), "abc")
+
+      foldCodePoints(7, acc -> _ -> acc + 1, path("/tmp/three"))
+      success
+   }
+   "delete" should "be refused for a directory that is not empty" in mocked {
+      withFile(path("/tmp/dir/one"), "1")
+
+      delete(path("/tmp/dir"))
+   }
+   "delete" should "be refused for a path nothing is at" in mocked {
+      delete(path("/tmp/nowhere"))
+   }
+}
+
+/**
+ * Each refused case's failure, rendered, or `none` for a case that passed.
+ */
+private def refusalFailures: List[String] = runWriterToLog(refusals).map(failureOf)
+
+private def failureOf(result: TestResult): String = result.outcome match {
+   case Passed              -> "none"
+   case FailedWith(failure) -> show(failure)
 }
