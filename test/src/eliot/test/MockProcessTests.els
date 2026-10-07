@@ -191,7 +191,39 @@ def testCases: Test = {
    }
    "whenSpawning" should "fail the case at the next run when a blank fragment is arranged" in {
       (refusalFailures.at(0) orElse "<none>") shouldBe
-         "Failed(.$ git: a command was arranged with the fragment ' ', which names nothing that was run, so it matches no command)"
+         "Failed(.$ git: an arrangement has the fragment ' ', which names nothing that was called, so it matches no call)"
+   }
+   "whenFailing" should "make a command fail to start, raising an IoError and leaving nothing behind" in mocked {
+      whenFailing("curl", "Cannot run program curl")
+      whenSpawningWrites("curl", path("/cache/asset.download"), "bytes")
+
+      catch[IoError, String](run(command("curl"), here).standardOutput, e -> show(e)) shouldBe "Cannot run program curl"
+      existsAt(path("/cache/asset.download")).shouldBeFalse
+      calls shouldBe ".$ curl"
+   }
+   "whenFailing" should "let a fallback program answer, which is what it is for" in mocked {
+      whenFailing("curl", "Cannot run program curl")
+      whenSpawning("wget", succeeding("fetched"))
+
+      fetchedWithFallback shouldBe "fetched"
+      wereCalledInOrder(append(singleton("curl"), "wget"))
+   }
+   "whenFailing" should "give way to a more recent whenSpawning, so a command can be re-armed to start" in mocked {
+      whenFailing("git", "Cannot run program git")
+      whenSpawning("git", succeeding("started"))
+
+      run(command("git"), here).standardOutput shouldBe "started"
+   }
+   "whenFailing" should "win over an older whenSpawning" in mocked {
+      whenSpawning("git", succeeding("started"))
+      whenFailing("git", "Cannot run program git")
+
+      catch[IoError, String](run(command("git"), here).standardOutput, e -> show(e)) shouldBe "Cannot run program git"
+   }
+   "whenFailing" should "apply to runInheritingIo too" in mocked {
+      whenFailing("javac", "Cannot run program javac")
+
+      catch[IoError, Int](runInheritingIo(command("javac"), here), _ -> 99) shouldBe 99
    }
    "runInheritingIo" should "answer the arranged exit code" in mocked {
       whenSpawning("javac", failing(2, "compilation failed"))
@@ -240,6 +272,15 @@ private def failureOf(result: TestResult): String = result.outcome match {
  */
 private def cloneUnlessPresent: {Process, FileSystem, Throw[IoError]} Unit =
    unless(exists(path("/cache/mirror"))) clone
+
+/**
+ * Code under test: curl, or wget where curl will not start.
+ */
+private def fetchedWithFallback: {Process, Throw[IoError]} String = {
+   val curled = catch[IoError, Option[String]](some(run(command("curl"), here).standardOutput), _ -> none)
+
+   curled orElse run(command("wget"), here).standardOutput
+}
 
 private def clone: {Process, Throw[IoError]} Unit = {
    run(command("git").withArgument("clone"), here)

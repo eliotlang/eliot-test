@@ -156,11 +156,43 @@ def testCases: Test = {
 
       exists(path("/tmp/dir/two")).shouldBeTrue
    }
-   "delete" should "fail the case for a directory with something inside it, as the platform refuses it" in {
-      (refusalFailures.at(1) orElse "<none>") shouldBe "Failed(delete /tmp/dir: the directory is not empty; the platform raises an IoError here)"
+   "delete" should "raise for a directory with something inside it, and keep it, as the platform does" in mocked {
+      withFile(path("/tmp/dir/one"), "1")
+
+      ioFailureOf(delete(path("/tmp/dir"))) shouldBe "delete /tmp/dir: the directory is not empty"
+      existsAt(path("/tmp/dir/one")).shouldBeTrue
    }
-   "delete" should "fail the case for a path nothing is at, as the platform refuses it" in {
-      (refusalFailures.at(2) orElse "<none>") shouldBe "Failed(delete /tmp/nowhere: there is nothing at that path; the platform raises an IoError here)"
+   "delete" should "raise for a path nothing is at, as the platform does" in mocked {
+      ioFailureOf(delete(path("/tmp/nowhere"))) shouldBe "delete /tmp/nowhere: there is nothing at that path"
+   }
+   "an I/O failure" should "fail the case when the code under test lets it reach mocked" in {
+      (refusalFailures.at(1) orElse "<none>") shouldBe "Failed(unexpected I/O failure: delete /tmp/nowhere: there is nothing at that path)"
+   }
+   "whenFailing" should "make a matching operation raise, and record it" in mocked {
+      whenFailing("readFile /etc/hosts", "permission denied")
+
+      ioFailureOf(printedContent(path("/etc/hosts"))) shouldBe "permission denied"
+      calls shouldBe "readFile /etc/hosts"
+   }
+   "whenFailing" should "leave an operation it does not match alone" in mocked {
+      whenFailing("readFile /etc/hosts", "permission denied")
+      withFile(path("/etc/motd"), "hi")
+
+      ioFailureOf(printedContent(path("/etc/motd"))) shouldBe "no failure"
+   }
+   "whenFailing" should "change nothing when the failing operation would have" in mocked {
+      whenFailing("writeFile", "disk full")
+      withFile(path("/tmp/out"), "old")
+
+      ioFailureOf(writeFile("new", path("/tmp/out"))) shouldBe "disk full"
+      (fileContentAt(path("/tmp/out")) orElse "<missing>") shouldBe "old"
+   }
+   "whenFailing" should "make a delete that would succeed raise and keep the path" in mocked {
+      whenFailing("delete", "busy")
+      withFile(path("/tmp/held"), "x")
+
+      ioFailureOf(delete(path("/tmp/held"))) shouldBe "busy"
+      existsAt(path("/tmp/held")).shouldBeTrue
    }
    "writeFile" should "replace what the file held before" in mocked {
       withFile(path("/tmp/out"), "old")
@@ -227,15 +259,23 @@ private def refusals: Test = {
       foldCodePoints(7, acc -> _ -> acc + 1, path("/tmp/three"))
       success
    }
-   "delete" should "be refused for a directory that is not empty" in mocked {
-      withFile(path("/tmp/dir/one"), "1")
-
-      delete(path("/tmp/dir"))
-   }
-   "delete" should "be refused for a path nothing is at" in mocked {
+   "delete" should "fail the case for a path nothing is at, when nothing catches it" in mocked {
       delete(path("/tmp/nowhere"))
    }
 }
+
+/**
+ * What `body` raised, as its message, or `"no failure"` where it raised nothing.
+ */
+private def ioFailureOf(body: {Throw[IoError]} Unit): String = catch[IoError, String]({
+   body
+   "no failure"
+}, e -> show(e))
+
+/**
+ * Code under test reading a file, so the read is a statement whose value is used.
+ */
+private def printedContent(at: Path): {FileSystem, Console, Throw[IoError]} Unit = printLine(readFile(at))
 
 /**
  * Each refused case's failure, rendered, or `none` for a case that passed.

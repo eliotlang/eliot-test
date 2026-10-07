@@ -94,10 +94,12 @@ In rough priority order. "eliot" marks a task that needs an eliot change and a t
    or task 9 lets the arrangement say what curl leaves behind. Task 9 is the better fix and should come first.
 2. *eliot.* Add `processResult(exitCode, standardOutput, standardError)` to the base, body-less there and
    bodied in jvm like `ioError`, and build `succeeding`/`failing`/`exiting` with it.
-3. *eliot (a tag carrying `ioError`).* Raise `IoError` where the platform does (§1c–e, and the refusals tasks
-   1 and 4 made failed cases), add `whenFailing(fragment, message)` for file operations and a way to make a
-   spawn fail to start, cover the wget fallback in eliot-build, and drop the "cannot raise `IoError`" notes from
-   `Mock.els`, `README.md` and both repositories' `CLAUDE.md`.
+3. **Partly done (2026-10-07), on eliot `v0.8`.** `whenFailing(fragment, failure)` makes a matching file
+   operation, `run` or `runInheritingIo` raise an `IoError` — recorded, changing nothing, leaving nothing behind —
+   ranked with `whenSpawning` by recency, which also covers a program that fails to start (the curl→wget
+   fallback). `delete`'s refusals raise an `IoError` instead of failing the case. Left: §1c–e (`readFile` of a
+   missing file still answers `""`, `writeFile` under a missing parent and kind swaps still succeed), and
+   eliot-build's wget-fallback cases once it moves to this tag.
 4. **Done (2026-10-07).** `foldCodePoints` fails the case, naming the call, instead of answering `initial`. §1f.
 5. **Done (2026-10-07).** Inspection that is not a call: `fileContentAt` (`Option[String]`, `None` where there
    is no file), `existsAt` (a file or a directory, as `exists` answers) and `filesUnder` (as `walk` answers),

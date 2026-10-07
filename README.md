@@ -64,7 +64,8 @@ import eliot.test.Mock
 ```
 
 - **Arranging:** `whenSpawning(fragment, succeeding(out) | failing(code, err) | exiting(code, out))`,
-  `whenSpawningInTurn(fragment, results)` (one answer per run, the last repeating), `whenSpawningCreates`, `whenSpawningWrites`, `whenReading`, `withFile`, `withDirectory`, `withVariable`, `withArguments`,
+  `whenSpawningInTurn(fragment, results)` (one answer per run, the last repeating), `whenFailing(fragment,
+  failure)` (a matching file operation or spawn raises an `IoError`), `whenSpawningCreates`, `whenSpawningWrites`, `whenReading`, `withFile`, `withDirectory`, `withVariable`, `withArguments`,
   `withWorkingDirectory`. The most recent arrangement wins.
 - **Verifying:** `wasCalled`, `wasNeverCalled`, `wasCalledOnce`, `wasCalledTimes`, `wasCalledAtLeast`,
   `wasCalledAtMost`, `wereCalledInOrder`, `nothingWasCalled`, `onlyTheseWereCalled`, plus `calls`,
@@ -83,9 +84,9 @@ import eliot.test.Mock
   the command line (`/work$ git fetch`).
 - **The file system** is an in-memory tree: what the test put there plus what the code under test wrote. A
   directory holding a file exists even if nobody created it.
-- **Limitation:** the doubles cannot raise `IoError` yet, because the standard library offers no way to create
-  one. A missing file reads as `""`; where answering would hide a difference a test must not rely on — deleting a
-  non-empty directory or a path nothing is at, `foldCodePoints` — the double fails the case instead.
+- **Failures:** `whenFailing` makes a call raise an `IoError` the code under test may catch; one that reaches
+  `mocked` fails the case. `delete` raises where the platform does, for a non-empty directory or a path nothing is
+  at. A missing file still reads as `""`, and `foldCodePoints` fails the case.
 
 For an effect of your own, write a named implementation in the test module and bind it with an expression `with`
 inside the mocked body; see the `eliot-code` language guide. Its operations join the same journal as the
@@ -144,7 +145,7 @@ framework by depending on its `suite` package next to its platform:
 package test {
   at test
   dep github.com/eliotlang/eliot-test//suite v0.2
-  dep github.com/eliotlang/eliot//jvm v0.7
+  dep github.com/eliotlang/eliot//jvm v0.8
 }
 ```
 

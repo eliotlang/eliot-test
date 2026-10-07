@@ -36,11 +36,10 @@ import eliot.test.Assertion
  * under test changes it by writing, creating and deleting. A directory holding a file exists even when nobody
  * created it explicitly.
  *
- * **What the doubles cannot do yet** is fail: the standard library's `IoError` has no constructor a test could
- * call, so reading a file that does not exist answers `""` instead of raising, and no arrangement can make a call
- * raise an `IoError`. Where answering would hide a difference from the platform that a test must not rely on —
- * deleting a non-empty directory or a path nothing is at, folding a file's code points — the double fails the case
- * instead, naming the call.
+ * **A call fails when the test says so**: `whenFailing` makes a matching file operation or spawn raise an `IoError`,
+ * which the code under test may catch, and which fails the case if it reaches `mocked`. `delete` raises one where
+ * the platform does, for a non-empty directory or a path nothing is at. Reading a file that does not exist still
+ * answers `""`, and `foldCodePoints` fails the case, since no Eliot code can reach a string's code points.
  */
 
 /**
@@ -70,6 +69,22 @@ def mocked(
  */
 def whenSpawning(commandFragment: String, result: ProcessResult): {Mocking} Unit =
    whenSpawningInTurn(commandFragment, singleton(result))
+
+/**
+ * Arrange that a call matching `fragment` raises an `IoError` carrying `failure`, the way the platform raises one
+ * when a file cannot be written or a program cannot be started:
+ *
+ * ```eliot
+ * whenFailing("writeFile /etc/hosts", "permission denied")
+ * whenFailing("curl", "Cannot run program \"curl\"")          // curl is not installed
+ * ```
+ *
+ * It applies to the operations that may raise one — every `FileSystem` operation, and `run` and `runInheritingIo` —
+ * and a failed call is still recorded, but changes nothing and leaves nothing behind. It is ranked with
+ * `whenSpawning`: the most recent matching arrangement decides, so a test may arrange a command to fail and later
+ * to succeed.
+ */
+def whenFailing(fragment: String, failure: String): {Mocking} Unit = arranged(Failing(fragment, failure))
 
 /**
  * Arrange what a spawned process answers each time it runs: the first command matching `commandFragment` answers
@@ -413,69 +428,94 @@ implement mockLog: Log {
  * answered by the most recent matching `whenSpawning` or `whenSpawningInTurn`, which it uses up by one answer.
  */
 implement mockProcess: Process {
-   def run(command: List[String], workingDirectory: Path): {State[Recording], Throw[AssertionError]} ProcessResult =
+   def run(command: List[String], workingDirectory: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} ProcessResult =
       spawning(spawnedIn(keyOf(workingDirectory), command))
 
-   def runInheritingIo(command: List[String], workingDirectory: Path): {State[Recording], Throw[AssertionError]} Int =
+   def runInheritingIo(command: List[String], workingDirectory: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} Int =
       spawning(spawnedIn(keyOf(workingDirectory), command)).exitCode
 
    def registerExitCode(code: Int): {State[Recording]} Unit = noting(asked("registerExitCode", show(code)))
 }
 
 /**
- * The file system double, over the in-memory tree. Every operation is recorded as its name and the path.
+ * The file system double, over the in-memory tree. Every operation is recorded as its name and the path, and raises
+ * the `IoError` a matching `whenFailing` arranged, changing nothing.
  *
  * Lines end the way the platform reads them: at `\n`, `\r\n` or `\r`, and a final line ending ends the last line
  * rather than starting an empty one.
  *
  * `delete` removes one thing, as the platform does: a directory with something inside it, or a path nothing is
- * at, fails the case. `foldCodePoints` fails the case too, after recording the call: the standard library offers
- * no way to reach a string's code points from Eliot code, and answering `initial` would read as a right answer.
+ * at, raises an `IoError` and stays. `foldCodePoints` fails the case, after recording the call: the standard library
+ * offers no way to reach a string's code points from Eliot code, and answering `initial` would read as a right
+ * answer.
  */
 implement mockFileSystem: FileSystem {
-   def readFile(path: Path): {State[Recording]} String =
+   def readFile(path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} String = {
+      failingIfArranged(about("readFile", path))
       answering(about("readFile", path), r -> contentAt(keyOf(path), r.fileTree))
+   }
 
-   def writeFile(content: String, path: Path): {State[Recording]} Unit =
+   def writeFile(content: String, path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} Unit = {
+      failingIfArranged(about("writeFile", path))
       changingFiles(about("writeFile", path), tree -> placedIn(FileEntry(keyOf(path), content), tree))
+   }
 
-   def appendFile(content: String, path: Path): {State[Recording]} Unit =
+   def appendFile(content: String, path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} Unit = {
+      failingIfArranged(about("appendFile", path))
       changingFiles(about("appendFile", path), tree -> placedIn(FileEntry(keyOf(path), contentAt(keyOf(path), tree) ++ content), tree))
+   }
 
-   def foldLines[B](initial: B, step: B => String => B, path: Path): {State[Recording]} B =
+   def foldLines[B](initial: B, step: B => String => B, path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} B = {
+      failingIfArranged(about("foldLines", path))
       answering(about("foldLines", path), r -> linesAt(keyOf(path), r.fileTree).foldLeft(initial, line -> acc -> step(acc)(line)))
+   }
 
-   def foldCodePoints[B](initial: B, step: B => Int => B, path: Path): {State[Recording], Throw[AssertionError]} B = {
+   def foldCodePoints[B](initial: B, step: B => Int => B, path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} B = {
+      failingIfArranged(about("foldCodePoints", path))
       noting(about("foldCodePoints", path))
       fail(described(about("foldCodePoints", path)) ++ ": the mocked FileSystem cannot fold a file's code points")
 
       initial
    }
 
-   def readLines(path: Path): {State[Recording]} List[String] =
+   def readLines(path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} List[String] = {
+      failingIfArranged(about("readLines", path))
       answering(about("readLines", path), r -> linesAt(keyOf(path), r.fileTree))
+   }
 
-   def exists(path: Path): {State[Recording]} Bool =
+   def exists(path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} Bool = {
+      failingIfArranged(about("exists", path))
       answering(about("exists", path), r -> existsIn(keyOf(path), r.fileTree))
+   }
 
-   def isDirectory(path: Path): {State[Recording]} Bool =
+   def isDirectory(path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} Bool = {
+      failingIfArranged(about("isDirectory", path))
       answering(about("isDirectory", path), r -> isDirectoryIn(keyOf(path), r.fileTree))
+   }
 
-   def listDirectory(path: Path): {State[Recording]} List[Path] =
+   def listDirectory(path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} List[Path] = {
+      failingIfArranged(about("listDirectory", path))
       answering(about("listDirectory", path), r -> entriesOf(keyOf(path), r.fileTree).asPaths)
+   }
 
-   def walk(path: Path): {State[Recording]} List[Path] =
+   def walk(path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} List[Path] = {
+      failingIfArranged(about("walk", path))
       answering(about("walk", path), r -> filePathsUnder(keyOf(path), r.fileTree).asPaths)
+   }
 
-   def createDirectories(path: Path): {State[Recording]} Unit =
+   def createDirectories(path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} Unit = {
+      failingIfArranged(about("createDirectories", path))
       changingFiles(about("createDirectories", path), tree -> placedIn(DirectoryEntry(keyOf(path)), tree))
+   }
 
-   def delete(path: Path): {State[Recording], Throw[AssertionError]} Unit = {
-      val tree = state.fileTree
+   def delete(path: Path): {State[Recording], Throw[IoError], Throw[AssertionError]} Unit = {
+      failingIfArranged(about("delete", path))
+      noting(about("delete", path))
 
-      changingFiles(about("delete", path), t -> removedFrom(keyOf(path), t))
-      unless(existsIn(keyOf(path), tree)) refused(about("delete", path), "there is nothing at that path")
-      unless(entriesOf(keyOf(path), tree).isEmpty) refused(about("delete", path), "the directory is not empty")
+      unless(existsIn(keyOf(path), state.fileTree)) refused(about("delete", path), "there is nothing at that path")
+      unless(entriesOf(keyOf(path), state.fileTree).isEmpty) refused(about("delete", path), "the directory is not empty")
+
+      updateState(r -> r.setTree(removedFrom(keyOf(path), r.fileTree)))
    }
 }
 
@@ -501,6 +541,7 @@ implement mockEnvironment: Environment {
  */
 private data Arrangement =
    Spawning(commandFragment: String, spawnedResults: List[ProcessResult]) |
+   Failing(failingFragment: String, failureText: String) |
    Creating(creatingFragment: String, createdEntry: Entry) |
    Defining(variableName: String, variableValue: String) |
    Passing(passedArguments: List[String]) |
@@ -656,25 +697,52 @@ private def fragmentsNotSeenInOrder(fragments: List[String], history: List[Call]
 // ---- Processes --------------------------------------------------------------------------------------------------
 
 /**
- * Record `spawned` and answer what was arranged for it — or fail the case, where a blank fragment is arranged.
+ * Record `spawned` and answer what was arranged for it, or raise the failure arranged for it.
  */
-private def spawning(spawned: Call): {State[Recording], Throw[AssertionError]} ProcessResult = {
-   val blank = state.arrangements.filterMap(blankSpawningFragment)
-
-   unless(blank.isEmpty) fail(
-      described(spawned) ++ ": a command was arranged with the fragment '" ++ blank.joined("', '") ++
-         "', which names nothing that was run, so it matches no command"
-   )
+private def spawning(spawned: Call): {State[Recording], Throw[IoError], Throw[AssertionError]} ProcessResult = {
+   failingIfArranged(spawned)
 
    recorded(r -> afterSpawning(spawned, r), r -> resultFor(spawned, r))
 }
 
 /**
- * The fragment of a spawning arrangement that names nothing to run, as `refusingBlank` judges a verification's.
+ * Before `call` is answered: fail the case where a blank fragment is arranged, and raise — recording the call, and
+ * changing nothing else — where the most recent arrangement deciding `call` is a `whenFailing`.
  */
-private def blankSpawningFragment(arrangement: Arrangement): Option[String] = arrangement match {
+private def failingIfArranged(call: Call): {State[Recording], Throw[IoError], Throw[AssertionError]} Unit = {
+   val arranged = state.arrangements
+   val blank = arranged.filterMap(blankFragment)
+
+   unless(blank.isEmpty) fail(
+      described(call) ++ ": an arrangement has the fragment '" ++ blank.joined("', '") ++
+         "', which names nothing that was called, so it matches no call"
+   )
+
+   val failure = arranged.findMap(arrangement -> decidedFailure(call, arrangement)).foldOption(none, decided -> decided)
+
+   when(failure.isSome) {
+      noting(call)
+      raise(ioError(failure orElse ""))
+   }
+}
+
+/**
+ * Whether `arrangement` decides how `call` ends: `some` failure for a matching `whenFailing`, `some(none)` for a
+ * matching `whenSpawning` with an answer left — which wins over any older `whenFailing` — and `none` otherwise.
+ */
+private def decidedFailure(call: Call, arrangement: Arrangement): Option[Option[String]] = arrangement match {
+   case Failing(fragment, failure)  -> someIf(matches(fragment, call)) some(failure)
+   case Spawning(fragment, results) -> someIf(call.callDirectory.isSome && (!(results.isEmpty) && matches(fragment, call))) none
+   case _                           -> none
+}
+
+/**
+ * The fragment of an arrangement that names nothing that was called, as `refusingBlank` judges a verification's.
+ */
+private def blankFragment(arrangement: Arrangement): Option[String] = arrangement match {
    case Spawning(fragment, _) -> someIf(namesNothing(fragment)) fragment
    case Creating(fragment, _) -> someIf(namesNothing(fragment)) fragment
+   case Failing(fragment, _)  -> someIf(namesNothing(fragment)) fragment
    case _                     -> none
 }
 
@@ -790,10 +858,9 @@ private def placedIn(entry: Entry, tree: List[Entry]): List[Entry] =
 private def removedFrom(at: String, tree: List[Entry]): List[Entry] = tree.filter(entry -> entryPath(entry) != at)
 
 /**
- * Fail the case where the platform's `FileSystem` would raise an `IoError`, which a double cannot construct yet.
+ * Raise the `IoError` the platform's `FileSystem` raises for `call`.
  */
-private def refused(call: Call, reason: String): {Throw[AssertionError]} Unit =
-   fail(described(call) ++ ": " ++ reason ++ "; the platform raises an IoError here")
+private def refused(call: Call, reason: String): {Throw[IoError]} Unit = raise(ioError(described(call) ++ ": " ++ reason))
 
 private def contentAt(at: String, tree: List[Entry]): String = tree.findMap(entry -> fileContent(at, entry)) orElse ""
 
