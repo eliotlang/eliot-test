@@ -20,12 +20,17 @@ import eliot.test.Assertion
  * }
  * ```
  *
- * **Calls are matched by words.** Every verification, and `whenSpawning`, takes a *fragment*: a call matches when
- * the fragment's words appear in the call's description, next to each other and in order. So `wasCalled("ls-remote")`
- * matches `/work$ git ls-remote --tags x` without spelling out the whole command, while `wasCalled("log")` does not
- * match `printLine catalog`. A call is described as the operation followed by its arguments — `printLine hello`,
- * `readFile /etc/hosts` — except a spawned process, which is the directory it ran in, then `$`, then the command
- * line: `/work$ git fetch`.
+ * **Calls are matched by what was called, then by words.** Every verification, and every `whenSpawning…`, takes a
+ * *fragment*. Its first word is what was called and must be exactly that: the operation (`printLine`, `readFile`, a
+ * project's `recordCall` name) or, for a spawned process, the program (`git`). The words after it must appear among
+ * the call's arguments, next to each other and in order. So `wasCalled("git ls-remote")` matches
+ * `/work$ git ls-remote --tags x` without spelling out the whole command, `wasCalled("printLine cat")` does not match
+ * `printLine catalog`, and `wasCalled("delete")` does not match `printLine delete this`, because `delete` is not what
+ * was called there. A fragment may start with a directory and `$` — `/work$ git fetch` — to match only a process
+ * spawned in that directory. A blank fragment matches nothing, and a verification given one fails the case.
+ *
+ * A call reads as the operation followed by its arguments — `printLine hello`, `readFile /etc/hosts` — except a
+ * spawned process, which is the directory it ran in, then `$`, then the command line: `/work$ git fetch`.
  *
  * **The file system is a small in-memory tree.** `withFile` and `withDirectory` put things in it, and the code
  * under test changes it by writing, creating and deleting. A directory holding a file exists even when nobody
@@ -55,15 +60,31 @@ def mocked(
  * Arrange what a spawned process answers: a command matching `commandFragment` answers `result`.
  *
  * ```eliot
- * whenSpawning("ls-remote", succeeding(listing))
- * whenSpawning("clone --mirror", failing(128, "no such repository"))
+ * whenSpawning("git ls-remote", succeeding(listing))
+ * whenSpawning("git clone --mirror", failing(128, "no such repository"))
  * ```
  *
  * When several arrangements match, the most recent one wins, so a test may act, re-arrange and act again. A
- * command nothing matches succeeds with no output.
+ * command nothing matches succeeds with no output. A blank fragment matches no command, and running anything
+ * while one is arranged fails the case.
  */
 def whenSpawning(commandFragment: String, result: ProcessResult): {Mocking} Unit =
-   arranged(Spawning(commandFragment, result))
+   whenSpawningInTurn(commandFragment, singleton(result))
+
+/**
+ * Arrange what a spawned process answers each time it runs: the first command matching `commandFragment` answers
+ * the first of `results`, the next one the second, and so on, and once they are used up the last one answers
+ * every further run — for code that runs one command more than once in a single act, such as a retry:
+ *
+ * ```eliot
+ * whenSpawningInTurn("curl", append(singleton(failing(22, "503 Service Unavailable")), succeeding("")))
+ * ```
+ *
+ * It is one arrangement, ranked like `whenSpawning`'s: the most recent matching arrangement answers, and only it is
+ * used up. Empty `results` answer nothing, so an older arrangement, or the default, answers instead.
+ */
+def whenSpawningInTurn(commandFragment: String, results: List[ProcessResult]): {Mocking} Unit =
+   arranged(Spawning(commandFragment, results))
 
 /**
  * A process that exited with 0 and printed `output`.
@@ -144,7 +165,7 @@ def withArguments(passed: List[String]): {Mocking} Unit = arranged(Passing(passe
 def withWorkingDirectory(at: Path): {Mocking} Unit = arranged(WorkingIn(keyOf(at)))
 
 /**
- * Every call made so far, oldest first, joined by `"; "`:
+ * Every call made so far, oldest first, as it reads, joined by `"; "`:
  *
  * ```eliot
  * calls shouldBe "readLine; printLine Hello, Bob!"
@@ -159,13 +180,15 @@ def calls: {Calls} String = recordedCalls.joined("; ")
  * ```eliot
  * callsMatching("git clone") shouldBe ".$ git clone --mirror https://github.com/x/foo target/cache"
  * ```
+ *
+ * `recordedCalls` answers the same calls as `Call`s, for reading one argument rather than the whole line.
  */
 def callsMatching(fragment: String): {Calls} String = matchingCalls(fragment).joined("; ")
 
 /**
  * The most recent call, or `"<none>"` when nothing has been called.
  */
-def lastCall: {Calls} String = recordedCalls.last orElse "<none>"
+def lastCall: {Calls} String = recordedCalls.last.mapOption(call -> show(call)) orElse "<none>"
 
 /**
  * How many calls matched `fragment`.
@@ -194,23 +217,27 @@ def forgetCalls: {Mocking} Unit = forgotten
  *
  * The call reads like every other: the operation, then its arguments, separated by spaces.
  */
-def recordCall(operation: String, arguments: List[String]): {Mocking} Unit = journaled(Asked(operation, arguments))
+def recordCall(operation: String, arguments: List[String]): {Mocking} Unit = journaled(Call(operation, arguments, none))
 
 /**
  * Verify that at least one call matched `fragment`.
  */
-def wasCalled(fragment: String): {Calls, Throw[AssertionError]} Unit =
+def wasCalled(fragment: String): {Calls, Throw[AssertionError]} Unit = {
+   refusingBlank(fragment)
    when(callCount(fragment) == 0) fail(
-      "expected a call containing '" ++ fragment ++ "', but the calls were: " ++ callsOrNone
+      "expected a call matching '" ++ fragment ++ "', but the calls were: " ++ callsOrNone
    )
+}
 
 /**
  * Verify that no call matched `fragment` — that the code under test did *not* do something.
  */
-def wasNeverCalled(fragment: String): {Calls, Throw[AssertionError]} Unit =
+def wasNeverCalled(fragment: String): {Calls, Throw[AssertionError]} Unit = {
+   refusingBlank(fragment)
    unless(callCount(fragment) == 0) fail(
-      "expected no call containing '" ++ fragment ++ "', but found " ++ callsMatching(fragment)
+      "expected no call matching '" ++ fragment ++ "', but found " ++ callsMatching(fragment)
    )
+}
 
 /**
  * Verify that exactly one call matched `fragment`.
@@ -220,28 +247,36 @@ def wasCalledOnce(fragment: String): {Calls, Throw[AssertionError]} Unit = wasCa
 /**
  * Verify that exactly `count` calls matched `fragment`.
  */
-def wasCalledTimes(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit =
+def wasCalledTimes(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit = {
+   refusingBlank(fragment)
    unless(callCount(fragment) == count) countMismatch("exactly", count, fragment)
+}
 
 /**
  * Verify that at least `count` calls matched `fragment`.
  */
-def wasCalledAtLeast(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit =
+def wasCalledAtLeast(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit = {
+   refusingBlank(fragment)
    unless(callCount(fragment) >= count) countMismatch("at least", count, fragment)
+}
 
 /**
  * Verify that at most `count` calls matched `fragment`.
  */
-def wasCalledAtMost(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit =
+def wasCalledAtMost(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit = {
+   refusingBlank(fragment)
    unless(callCount(fragment) <= count) countMismatch("at most", count, fragment)
+}
 
 /**
  * Verify that calls matching each of `fragments` happened in this order. Other calls may happen in between.
  */
-def wereCalledInOrder(fragments: List[String]): {Calls, Throw[AssertionError]} Unit =
+def wereCalledInOrder(fragments: List[String]): {Calls, Throw[AssertionError]} Unit = {
+   refusingAnyBlank(fragments)
    unless(fragmentsNotSeenInOrder(fragments, recordedCalls).isEmpty) fail(
       "expected calls in order: " ++ fragments.joined(", ") ++ "; got: " ++ callsOrNone
    )
+}
 
 /**
  * Verify that nothing was called at all.
@@ -254,6 +289,8 @@ def nothingWasCalled: {Calls, Throw[AssertionError]} Unit =
  * else.
  */
 def onlyTheseWereCalled(fragments: List[String]): {Calls, Throw[AssertionError]} Unit = {
+   refusingAnyBlank(fragments)
+
    val unexpected = recordedCalls.filter(call -> !(fragments.any(fragment -> matches(fragment, call))))
 
    unless(unexpected.isEmpty) fail("unexpected calls: " ++ unexpected.joined("; "))
@@ -288,6 +325,25 @@ def existsAt(at: Path): {Calls} Bool = existsIn(keyOf(at), recordedTree)
 def filesUnder(directory: Path): {Calls} List[Path] = filePathsUnder(keyOf(directory), recordedTree).asPaths
 
 /**
+ * One call a double was asked, as `Calls` answers it: what was called, its arguments, and the directory it ran in.
+ * An operation — the framework doubles' and those a project journals with `recordCall` — is its name and arguments,
+ * in no directory. A spawned process is its program, the rest of its command line, and the directory it would have
+ * run in, so `git fetch` run in `/work` is `Call("git", singleton("fetch"), some("/work"))`.
+ *
+ * ```eliot
+ * recordedCalls.last.mapOption(call -> call.callArguments) orElse empty
+ * ```
+ */
+data Call(callee: String, callArguments: List[String], callDirectory: Option[String])
+
+/**
+ * A call reads as `printLine hello`, `readFile /etc/hosts`, `/work$ git fetch`.
+ */
+implement Show[Call] {
+   def show(call: Call): String = described(call)
+}
+
+/**
  * Arranging, as an effect. The `when…` and `with…` words above perform it; a shared arrangement is an ordinary
  * definition declaring it, such as `def mirrorReady: {Mocking} Unit = withDirectory(path("target/cache"))`.
  *
@@ -319,18 +375,18 @@ implement Mocking {
 }
 
 /**
- * Verifying, as an effect: what the doubles have been asked, oldest first, each call as it reads — `printLine
- * hello`, `/work$ git fetch` — and what the file system holds now, a path with its content, or with none for a
- * directory. Reading either records nothing. A test names the effect and reads it through the words above.
+ * Verifying, as an effect: what the doubles have been asked, oldest first, and what the file system holds now, a
+ * path with its content, or with none for a directory. Reading either records nothing. A test names the effect and
+ * reads it through the words above, or reads `recordedCalls` itself for one call's arguments.
  */
 effect Calls {
-   def recordedCalls: List[String]
+   def recordedCalls: List[Call]
 
    def recordedFiles: List[Pair[String, Option[String]]]
 }
 
 implement Calls {
-   def recordedCalls: {State[Recording]} List[String] = state.journal.map(described)
+   def recordedCalls: {State[Recording]} List[Call] = state.journal
 
    def recordedFiles: {State[Recording]} List[Pair[String, Option[String]]] = state.fileTree.map(pathAndContent)
 }
@@ -354,14 +410,14 @@ implement mockLog: Log {
 
 /**
  * The process double: nothing is spawned. The command is recorded with the directory it would have run in, and
- * answered by the most recent matching `whenSpawning`.
+ * answered by the most recent matching `whenSpawning` or `whenSpawningInTurn`, which it uses up by one answer.
  */
 implement mockProcess: Process {
-   def run(command: List[String], workingDirectory: Path): {State[Recording]} ProcessResult =
-      spawning(Spawned(keyOf(workingDirectory), command))
+   def run(command: List[String], workingDirectory: Path): {State[Recording], Throw[AssertionError]} ProcessResult =
+      spawning(spawnedIn(keyOf(workingDirectory), command))
 
-   def runInheritingIo(command: List[String], workingDirectory: Path): {State[Recording]} Int =
-      spawning(Spawned(keyOf(workingDirectory), command)).exitCode
+   def runInheritingIo(command: List[String], workingDirectory: Path): {State[Recording], Throw[AssertionError]} Int =
+      spawning(spawnedIn(keyOf(workingDirectory), command)).exitCode
 
    def registerExitCode(code: Int): {State[Recording]} Unit = noting(asked("registerExitCode", show(code)))
 }
@@ -441,15 +497,10 @@ implement mockEnvironment: Environment {
 // ---- What the doubles keep: everything below is internal ------------------------------------------------------
 
 /**
- * One call a double was asked: an operation with its arguments, or a process spawned in a directory.
- */
-private data Call = Asked(operationName: String, operationArguments: List[String]) | Spawned(spawnDirectory: String, commandLine: List[String])
-
-/**
  * Something a test arranged, other than the file system's content. The most recent one wins.
  */
 private data Arrangement =
-   Spawning(commandFragment: String, spawnedResult: ProcessResult) |
+   Spawning(commandFragment: String, spawnedResults: List[ProcessResult]) |
    Creating(creatingFragment: String, createdEntry: Entry) |
    Defining(variableName: String, variableValue: String) |
    Passing(passedArguments: List[String]) |
@@ -512,9 +563,15 @@ private def noting(call: Call): {State[Recording]} Unit = updateState(r -> noted
 
 private def noted(call: Call, r: Recording): Recording = r.setJournal(append(r.journal, call))
 
-private def asked(operation: String, argument: String): Call = Asked(operation, singleton(argument))
+private def asked(operation: String, argument: String): Call = Call(operation, singleton(argument), none)
 
-private def askedNothing(operation: String): Call = Asked(operation, empty)
+private def askedNothing(operation: String): Call = Call(operation, empty, none)
+
+/**
+ * A process spawned in `directory`: its program is what was called, the rest of the command line its arguments.
+ */
+private def spawnedIn(directory: String, commandLine: List[String]): Call =
+   Call(commandLine.head orElse "", commandLine.tail, some(directory))
 
 private def about(operation: String, at: Path): Call = asked(operation, keyOf(at))
 
@@ -523,21 +580,58 @@ private def about(operation: String, at: Path): Call = asked(operation, keyOf(at
 /**
  * How a call reads: `printLine hello`, `readFile /etc/hosts`, `/work$ git fetch`.
  */
-private def described(call: Call): String = call match {
-   case Asked(operation, arguments)      -> prepend(arguments, operation).joined(" ")
-   case Spawned(directory, commandLine) -> directory ++ "$ " ++ commandLine.joined(" ")
+private def described(call: Call): String =
+   call.callDirectory.foldOption("", directory -> directory ++ "$ ") ++ prepend(call.callArguments, call.callee).joined(" ")
+
+/**
+ * Whether `fragment` names `call`: its first word is exactly what was called — the operation, or the program a
+ * process ran — and the words after it appear among the call's arguments, next to each other and in order. A first
+ * word ending in `$` names the directory a process ran in, and the fragment then matches only a process run there.
+ * A blank fragment, or one naming a directory and nothing else, matches nothing.
+ */
+private def matches(fragment: String, call: Call): Bool = {
+   val fragmentWords = words(fragment)
+   val directory = directoryNamedBy(fragmentWords)
+   val named = if(directory.isSome) fragmentWords.tail else fragmentWords
+
+   val calledMatches = named.head.anyOption(called -> called == call.callee)
+   val directoryMatches = directory.isNone || (directory == call.callDirectory)
+   val argumentsMatch = named.tail.isEmpty || contains(paddedWords(named.tail), paddedWords(call.callArguments.flatMap(words)))
+
+   calledMatches && (directoryMatches && argumentsMatch)
 }
 
 /**
- * Whether `fragment`'s words appear in the call's description, next to each other and in order. Padding both
- * sides with a space is what makes `log` match the word `log` and not the end of `catalog`.
+ * The directory a fragment's first word names, `/work` for `/work$`, or `None` where it names none.
  */
-private def matches(fragment: String, call: String): Bool =
-   isBlank(fragment) || contains(paddedWords(fragment), paddedWords(call))
+private def directoryNamedBy(fragmentWords: List[String]): Option[String] =
+   fragmentWords.head.foldOption(none, first -> someIf(endsWith("$", first)) take(length(first) - 1, first))
 
-private def paddedWords(text: String): String = " " ++ words(text).joined(" ") ++ " "
+/**
+ * The words joined and padded with a space on both sides, which is what makes `cat` match the word `cat` and not
+ * the start of `catalog`.
+ */
+private def paddedWords(of: List[String]): String = " " ++ of.joined(" ") ++ " "
 
-private def matchingCalls(fragment: String): {Calls} List[String] = recordedCalls.filter(call -> matches(fragment, call))
+private def matchingCalls(fragment: String): {Calls} List[Call] = recordedCalls.filter(call -> matches(fragment, call))
+
+/**
+ * Fail the case for a fragment that names nothing, which would match no call at all.
+ */
+private def refusingBlank(fragment: String): {Throw[AssertionError]} Unit = refusingAnyBlank(singleton(fragment))
+
+private def refusingAnyBlank(fragments: List[String]): {Throw[AssertionError]} Unit = {
+   val blank = fragments.filter(namesNothing)
+
+   unless(blank.isEmpty) fail(
+      "the fragment '" ++ blank.joined("', '") ++ "' names nothing that was called, so it matches no call"
+   )
+}
+
+/**
+ * Whether a fragment names nothing that was called: it is blank, or names only a directory.
+ */
+private def namesNothing(fragment: String): Bool = words(fragment).filter(word -> !(endsWith("$", word))).isEmpty
 
 /**
  * The file system as `recordedFiles` answers it, read back into the tree's own entries.
@@ -548,7 +642,7 @@ private def callsOrNone: {Calls} String = if(recordedCalls.isEmpty) "none" else 
 
 private def countMismatch(qualifier: String, count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit =
    raise(NotEqual(
-      qualifier ++ " " ++ show(count) ++ " calls containing '" ++ fragment ++ "'",
+      qualifier ++ " " ++ show(count) ++ (if(count == 1) " call" else " calls") ++ " matching '" ++ fragment ++ "'",
       show(callCount(fragment)) ++ " (" ++ callsOrNone ++ ")"
    ))
 
@@ -556,22 +650,61 @@ private def countMismatch(qualifier: String, count: Int, fragment: String): {Cal
  * The fragments still waiting after walking through `history`: each call matching the first waiting fragment
  * removes it. Empty exactly when the fragments were all seen, in order.
  */
-private def fragmentsNotSeenInOrder(fragments: List[String], history: List[String]): List[String] =
+private def fragmentsNotSeenInOrder(fragments: List[String], history: List[Call]): List[String] =
    history.foldLeft(fragments, call -> waiting -> if(waiting.head.anyOption(next -> matches(next, call))) waiting.tail else waiting)
 
 // ---- Processes --------------------------------------------------------------------------------------------------
 
 /**
- * Record `spawned` and answer what was arranged for it.
+ * Record `spawned` and answer what was arranged for it — or fail the case, where a blank fragment is arranged.
  */
-private def spawning(spawned: Call): {State[Recording]} ProcessResult =
-   recorded(r -> spawnedIn(spawned, r), r -> resultFor(spawned, r))
+private def spawning(spawned: Call): {State[Recording], Throw[AssertionError]} ProcessResult = {
+   val blank = state.arrangements.filterMap(blankSpawningFragment)
+
+   unless(blank.isEmpty) fail(
+      described(spawned) ++ ": a command was arranged with the fragment '" ++ blank.joined("', '") ++
+         "', which names nothing that was run, so it matches no command"
+   )
+
+   recorded(r -> afterSpawning(spawned, r), r -> resultFor(spawned, r))
+}
 
 /**
- * The recording after `spawned` ran: the call is recorded, and what it leaves behind is now in the file system.
+ * The fragment of a spawning arrangement that names nothing to run, as `refusingBlank` judges a verification's.
  */
-private def spawnedIn(spawned: Call, r: Recording): Recording =
-   noted(spawned, r).setTree(leftBehind(spawned, r).mapOption(entry -> placedIn(entry, r.fileTree)) orElse r.fileTree)
+private def blankSpawningFragment(arrangement: Arrangement): Option[String] = arrangement match {
+   case Spawning(fragment, _) -> someIf(namesNothing(fragment)) fragment
+   case Creating(fragment, _) -> someIf(namesNothing(fragment)) fragment
+   case _                     -> none
+}
+
+/**
+ * The recording after `spawned` ran: the call is recorded, what it leaves behind is now in the file system, and the
+ * arrangement that answered it has used up one answer.
+ */
+private def afterSpawning(spawned: Call, r: Recording): Recording =
+   noted(spawned, r)
+      .setTree(leftBehind(spawned, r).mapOption(entry -> placedIn(entry, r.fileTree)) orElse r.fileTree)
+      .setArrangements(answerUsedUp(spawned, r.arrangements))
+
+/**
+ * `arrangements` with the one that answers `spawned` — the most recent matching `Spawning` — advanced past the answer
+ * it gave, unless that was its last, which then answers every further run.
+ */
+private def answerUsedUp(spawned: Call, arrangements: List[Arrangement]): List[Arrangement] =
+   arrangements
+      .foldLeft(pair(false, empty), arrangement -> done -> usingUp(spawned, arrangement, done))
+      .second
+      .reverse
+
+private def usingUp(spawned: Call, arrangement: Arrangement, done: Pair[Bool, List[Arrangement]]): Pair[Bool, List[Arrangement]] =
+   if(!(done.first) && resultIfMatching(spawned, arrangement).isSome) pair(true, prepend(done.second, advanced(arrangement)))
+   else pair(done.first, prepend(done.second, arrangement))
+
+private def advanced(arrangement: Arrangement): Arrangement = arrangement match {
+   case Spawning(fragment, results) -> Spawning(fragment, if(results.tail.isEmpty) results else results.tail)
+   case _                           -> arrangement
+}
 
 /**
  * What `spawned` leaves behind: the most recent matching `whenSpawningCreates` or `whenSpawningWrites`, and
@@ -581,7 +714,7 @@ private def leftBehind(spawned: Call, r: Recording): Option[Entry] =
    if(resultFor(spawned, r).exitCode == 0) r.arrangements.findMap(arrangement -> createdBy(spawned, arrangement)) else none
 
 private def createdBy(spawned: Call, arrangement: Arrangement): Option[Entry] = arrangement match {
-   case Creating(fragment, created) -> someIf(matches(fragment, described(spawned))) created
+   case Creating(fragment, created) -> someIf(matches(fragment, spawned)) created
    case _                           -> none
 }
 
@@ -589,8 +722,8 @@ private def resultFor(spawned: Call, r: Recording): ProcessResult =
    r.arrangements.findMap(arrangement -> resultIfMatching(spawned, arrangement)) orElse succeeding("")
 
 private def resultIfMatching(spawned: Call, arrangement: Arrangement): Option[ProcessResult] = arrangement match {
-   case Spawning(fragment, result) -> someIf(matches(fragment, described(spawned))) result
-   case _                          -> none
+   case Spawning(fragment, results) -> if(matches(fragment, spawned)) results.head else none
+   case _                           -> none
 }
 
 // ---- The environment --------------------------------------------------------------------------------------------

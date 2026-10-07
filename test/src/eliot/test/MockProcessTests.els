@@ -14,7 +14,7 @@ import eliot.test.Mock
  */
 def testCases: Test = {
    "run" should "answer what the matching arrangement says" in mocked {
-      whenSpawning("ls-remote", succeeding("v1.0\nv1.1"))
+      whenSpawning("git ls-remote", succeeding("v1.0\nv1.1"))
 
       val result = run(command("git").withArgument("ls-remote"), here)
 
@@ -22,7 +22,7 @@ def testCases: Test = {
       result.standardOutput shouldBe "v1.0\nv1.1"
    }
    "run" should "answer a failing arrangement with its code and diagnostics" in mocked {
-      whenSpawning("clone", failing(128, "no such repository"))
+      whenSpawning("git clone", failing(128, "no such repository"))
 
       val result = run(command("git").withArgument("clone"), here)
 
@@ -30,20 +30,25 @@ def testCases: Test = {
       result.standardError shouldBe "no such repository"
    }
    "run" should "answer an exiting arrangement with both its code and its output" in mocked {
-      whenSpawning("diff", exiting(1, "one file changed"))
+      whenSpawning("git diff", exiting(1, "one file changed"))
 
       val result = run(command("git").withArgument("diff"), here)
 
       result.exitCode shouldBe 1
       result.standardOutput shouldBe "one file changed"
    }
-   "run" should "match an arrangement by some of the command's words, not the whole command line" in mocked {
-      whenSpawning("--tags", succeeding("matched"))
+   "run" should "match an arrangement by the program and some of its arguments, not the whole command line" in mocked {
+      whenSpawning("git --tags", succeeding("matched"))
 
       run(command("git").withArgument("ls-remote").withArgument("--tags"), here).standardOutput shouldBe "matched"
    }
+   "run" should "not match an arrangement whose first word is not the program" in mocked {
+      whenSpawning("ls-remote", failing(128, "would have matched"))
+
+      run(command("git").withArgument("ls-remote"), here).exitCode shouldBe 0
+   }
    "run" should "not match an arrangement naming only part of a word" in mocked {
-      whenSpawning("clone", failing(128, "would have matched"))
+      whenSpawning("git clone", failing(128, "would have matched"))
 
       run(command("git").withArgument("clone-ish"), here).exitCode shouldBe 0
    }
@@ -54,11 +59,11 @@ def testCases: Test = {
       run(command("git").withArgument("status"), here).standardOutput shouldBe ""
    }
    "run" should "prefer the most recent arrangement, so a double can be re-armed mid-test" in mocked {
-      whenSpawning("ls-remote", succeeding("first"))
+      whenSpawning("git ls-remote", succeeding("first"))
 
       run(command("git").withArgument("ls-remote"), here).standardOutput shouldBe "first"
 
-      whenSpawning("ls-remote", succeeding("second"))
+      whenSpawning("git ls-remote", succeeding("second"))
 
       run(command("git").withArgument("ls-remote"), here).standardOutput shouldBe "second"
    }
@@ -74,7 +79,7 @@ def testCases: Test = {
       calls shouldBe "/work$ git fetch"
    }
    "whenSpawningCreates" should "make the arranged path exist once the command has run" in mocked {
-      whenSpawningCreates("clone", path("/cache/mirror"))
+      whenSpawningCreates("git clone", path("/cache/mirror"))
 
       exists(path("/cache/mirror")).shouldBeFalse
 
@@ -83,8 +88,8 @@ def testCases: Test = {
       exists(path("/cache/mirror")).shouldBeTrue
    }
    "whenSpawningCreates" should "let a test observe that a second run is not needed" in mocked {
-      whenSpawningCreates("clone", path("/cache/mirror"))
-      whenSpawning("ls-remote", succeeding("v1.0"))
+      whenSpawningCreates("git clone", path("/cache/mirror"))
+      whenSpawning("git ls-remote", succeeding("v1.0"))
 
       cloneUnlessPresent
       cloneUnlessPresent
@@ -92,16 +97,16 @@ def testCases: Test = {
       wasCalledOnce("git clone")
    }
    "whenSpawningCreates" should "leave nothing behind a command that failed" in mocked {
-      whenSpawningCreates("clone", path("/cache/mirror"))
-      whenSpawning("clone", failing(128, "no such repository"))
+      whenSpawningCreates("git clone", path("/cache/mirror"))
+      whenSpawning("git clone", failing(128, "no such repository"))
 
       run(command("git").withArgument("clone"), here)
 
       exists(path("/cache/mirror")).shouldBeFalse
    }
    "whenSpawningCreates" should "leave only what the most recent arrangement says, so a test may re-arm it" in mocked {
-      whenSpawningCreates("clone", path("/cache/first"))
-      whenSpawningCreates("clone", path("/cache/second"))
+      whenSpawningCreates("git clone", path("/cache/first"))
+      whenSpawningCreates("git clone", path("/cache/second"))
 
       run(command("git").withArgument("clone"), here)
 
@@ -144,6 +149,50 @@ def testCases: Test = {
 
       exists(path("/cache/asset.download")).shouldBeFalse
    }
+   "whenSpawningInTurn" should "answer each run with the next result, then keep answering the last" in mocked {
+      whenSpawningInTurn("curl", append(append(singleton(failing(22, "503")), failing(7, "refused")), succeeding("ok")))
+
+      run(command("curl"), here).exitCode shouldBe 22
+      run(command("curl"), here).exitCode shouldBe 7
+      run(command("curl"), here).standardOutput shouldBe "ok"
+      run(command("curl"), here).standardOutput shouldBe "ok"
+   }
+   "whenSpawningInTurn" should "use up an answer only on a run it matches" in mocked {
+      whenSpawningInTurn("curl", append(singleton(failing(22, "503")), succeeding("ok")))
+
+      run(command("wget"), here)
+
+      run(command("curl"), here).exitCode shouldBe 22
+   }
+   "whenSpawningInTurn" should "use up only the most recent matching arrangement" in mocked {
+      whenSpawningInTurn("git", append(singleton(succeeding("old 1")), succeeding("old 2")))
+      whenSpawningInTurn("git fetch", append(singleton(succeeding("new 1")), succeeding("new 2")))
+
+      run(command("git").withArgument("fetch"), here).standardOutput shouldBe "new 1"
+      run(command("git").withArgument("status"), here).standardOutput shouldBe "old 1"
+      run(command("git").withArgument("fetch"), here).standardOutput shouldBe "new 2"
+      run(command("git").withArgument("status"), here).standardOutput shouldBe "old 2"
+   }
+   "whenSpawningInTurn" should "decide what a run leaves behind by the answer it gives that run" in mocked {
+      whenSpawningCreates("git clone", path("/cache/mirror"))
+      whenSpawningInTurn("git clone", append(singleton(failing(128, "timed out")), succeeding("")))
+
+      cloneUnlessPresent
+      exists(path("/cache/mirror")).shouldBeFalse
+
+      cloneUnlessPresent
+      exists(path("/cache/mirror")).shouldBeTrue
+   }
+   "whenSpawningInTurn" should "with no results, leave an older arrangement to answer" in mocked {
+      whenSpawning("git", succeeding("older"))
+      whenSpawningInTurn("git", empty)
+
+      run(command("git"), here).standardOutput shouldBe "older"
+   }
+   "whenSpawning" should "fail the case at the next run when a blank fragment is arranged" in {
+      (refusalFailures.at(0) orElse "<none>") shouldBe
+         "Failed(.$ git: a command was arranged with the fragment ' ', which names nothing that was run, so it matches no command)"
+   }
    "runInheritingIo" should "answer the arranged exit code" in mocked {
       whenSpawning("javac", failing(2, "compilation failed"))
 
@@ -162,6 +211,29 @@ def testCases: Test = {
 }
 
 private def here: Path = path(".")
+
+/**
+ * Cases the double refuses, run as a suite of their own so that the failures can be read: the double's failure is
+ * bound where `mocked` binds the double, so `raising` around the run cannot see it.
+ */
+private def refusals: Test = {
+   "run" should "be refused while a blank fragment is arranged" in mocked {
+      whenSpawning(" ", succeeding("everything"))
+
+      run(command("git"), here)
+      success
+   }
+}
+
+/**
+ * Each refused case's failure, rendered, or `none` for a case that passed.
+ */
+private def refusalFailures: List[String] = runWriterToLog(refusals).map(failureOf)
+
+private def failureOf(result: TestResult): String = result.outcome match {
+   case Passed              -> "none"
+   case FailedWith(failure) -> show(failure)
+}
 
 /**
  * Code under test: clone only when the mirror is not there yet.
