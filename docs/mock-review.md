@@ -79,6 +79,14 @@ In rough priority order. "eliot" marks a task that needs an eliot change and a t
 
 1. **Done (2026-10-07).** `delete` refuses a non-empty directory and a path nothing is at; `readLines` and
    `foldLines` end lines the way the platform does. §1a, §1b.
+
+   **What it costs a consumer.** Run against eliot-build's suite (a scratch tag, through `insteadOf`), it fails
+   9 of 319 cases, all in `ShellAssetsTests` and all for one reason: `curl --output <archive>` is mocked, so the
+   archive is never written, and `unpacked`'s `delete(archive)` now meets a path nothing is at. The production
+   code is right — the real curl leaves the file — and the tests were green only because the old `delete`
+   answered for anything. eliot-build pins eliot-test `v0.2` in its lock, so nothing breaks until it moves; when
+   it does, either each of those cases arranges the archive (`withFile(path(expectedTree ++ ".download"), "")`)
+   or task 9 lets the arrangement say what curl leaves behind. Task 9 is the better fix and should come first.
 2. *eliot.* Add `processResult(exitCode, standardOutput, standardError)` to the base, body-less there and
    bodied in jvm like `ioError`, and build `succeeding`/`failing`/`exiting` with it.
 3. *eliot (a tag carrying `ioError`).* Raise `IoError` where the platform does (§1c–e, and the refusals tasks
@@ -93,7 +101,7 @@ In rough priority order. "eliot" marks a task that needs an eliot change and a t
 7. Structured matching: the operation matched on its own, an argument holding spaces quoted in the
    description, and a blank fragment refused rather than matching everything.
 8. Answers in turn: `whenSpawningInTurn(fragment, results)`, consumed like the console input.
-9. `whenSpawningCreates` that can leave a file with content, applies only when the command exits 0, and is
+9. *Before eliot-build moves past eliot-test `v0.2`* (task 1). `whenSpawningCreates` that can leave a file with content, applies only when the command exits 0, and is
    most-recent-wins like `whenSpawning`.
 10. Paths resolved against `withWorkingDirectory`'s directory and normalised (`.`, `..`, `//`) in `keyOf`.
 11. The written content in `writeFile`/`appendFile`'s description (shortened), and `runInheritingIo`'s
