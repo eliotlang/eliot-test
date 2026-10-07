@@ -41,9 +41,10 @@ has the constructor, which also lets a test arrange a failure and assert that th
 
 - **No arrangement can make a call fail.** No failing file operation, and no command that fails to *start* —
   which is the curl→wget fallback eliot-build's `ShellAssetsTests` documents as uncoverable. Waits on task 3.
-- **Reading the tree back is itself recorded.** A test that checks what the code under test wrote
+- **Reading the tree back was itself recorded.** A test that checks what the code under test wrote
   (`readFile`, `exists`, `walk`) goes through the double, so `calls`, `onlyTheseWereCalled` and
-  `nothingWasCalled` answer differently depending on whether they are asked before or after the check. Task 5.
+  `nothingWasCalled` answered differently depending on whether they were asked before or after the check.
+  Task 5, done: `fileContentAt`, `existsAt` and `filesUnder` read the tree and record nothing.
 - **A project's own double cannot journal a call.** `Mocking` and `Calls` take this module's private types, so
   eliot-build's `TableGit` journals through `Log`, and its operations appear as `log cloneMirror …`, interleaved
   with whatever the production code really logged. The same leak runs the other way: the public
@@ -95,8 +96,10 @@ In rough priority order. "eliot" marks a task that needs an eliot change and a t
    spawn fail to start, cover the wget fallback in eliot-build, and drop the "cannot raise `IoError`" notes from
    `Mock.els`, `README.md` and both repositories' `CLAUDE.md`.
 4. **Done (2026-10-07).** `foldCodePoints` fails the case, naming the call, instead of answering `initial`. §1f.
-5. Inspection that is not a call: `fileContentAt`, `fileExistsAt`, `filesUnder` over the tree, recording
-   nothing, and the README telling a test to check with them.
+5. **Done (2026-10-07).** Inspection that is not a call: `fileContentAt` (`Option[String]`, `None` where there
+   is no file), `existsAt` (a file or a directory, as `exists` answers) and `filesUnder` (as `walk` answers),
+   read through a second operation of `Calls`, `recordedFiles`, and recording nothing. The README tells a test
+   to check with them. `recordedFiles` answers the private `Entry`, the same leak `recordedCalls` has (task 6).
 6. A public `recordCall(operation, arguments)` on `Mocking`; move eliot-build's `TableGit` off `Log`; stop
    answering the private `Call` from a public operation.
 7. Structured matching: the operation matched on its own, an argument holding spaces quoted in the

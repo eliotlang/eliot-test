@@ -74,7 +74,8 @@ section is how the pieces fit. Six modules, each owning one concern and keeping 
   fold's `combine` must be a declared value, never a lambda, so a filter cannot be handed to it as a parameter.
 
 - `eliot.test.Mock` — the doubles and the words a test writes (README, "Mocking"). Public: `mocked`, the
-  arranging and verifying words, the effects `Mocking` and `Calls` (a project names them in rows — eliot-build's
+  arranging and verifying words, the inspecting words (`fileContentAt`, `existsAt`, `filesUnder` — the tree, read through `Calls`, recording nothing),
+  the effects `Mocking` and `Calls` (a project names them in rows — eliot-build's
   `TableGit` declares `Mocking`), and the five named implementations. **Private**: everything they keep —
   `Recording(journal, arrangements, fileTree, pendingInput)` in `State[Recording]`, which `mocked` supplies and
   discharges; `Call = Asked(operationName, operationArguments) | Spawned(spawnDirectory, commandLine)`; `Arrangement` (answers:
@@ -206,7 +207,7 @@ which were carrier artefacts.
   why `Mock`'s fields carry longer names than its parameters.
 
 `./eliotw test` prints, per suite, its module name and one `✔`/`✗` line per subject with each failure detailed
-underneath, then one summary line for the whole run. **154 cases, all passing.**
+underneath, then one summary line for the whole run. **166 cases, all passing.**
 
 > **Compiler version.** Needs eliot `v0.7`: the base's `when`/`unless`, `someIf`, `filterMap`/`findMap`,
 > `includes`, `Eq[Option]` and `first`/`second`, which the assertions and the doubles are written with, and the

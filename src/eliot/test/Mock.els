@@ -242,6 +242,34 @@ def onlyTheseWereCalled(fragments: List[String]): {Calls, Throw[AssertionError]}
 }
 
 /**
+ * What the file at `at` holds now, or `None` where there is no file — read from the in-memory tree **without
+ * recording a call**, so checking what the code under test wrote does not change what `calls` and the
+ * verifications see:
+ *
+ * ```eliot
+ * writeDigest(archive)                                         // act
+ *
+ * (fileContentAt(path("cache/x.sha256")) orElse "<missing>") shouldBe "beef\n"
+ * onlyTheseWereCalled(singleton("writeFile"))                  // the check above was not a call
+ * ```
+ *
+ * `readFile` through the double answers the same content, and is recorded as the code under test's calls are.
+ */
+def fileContentAt(at: Path): {Calls} Option[String] = recordedFiles.findMap(entry -> fileContent(keyOf(at), entry))
+
+/**
+ * Whether anything — a file, or a directory, put there or implied by something inside it — is at `at` now, read
+ * without recording a call. `exists` through the double answers the same and is recorded.
+ */
+def existsAt(at: Path): {Calls} Bool = existsIn(keyOf(at), recordedFiles)
+
+/**
+ * The files inside `directory` now, however deep, read without recording a call. `walk` through the double
+ * answers the same and is recorded.
+ */
+def filesUnder(directory: Path): {Calls} List[Path] = filePathsUnder(keyOf(directory), recordedFiles).asPaths
+
+/**
  * Arranging, as an effect. The `when…` and `with…` words above perform it; a shared arrangement is an ordinary
  * definition declaring it, such as `def mirrorReady: {Mocking} Unit = withDirectory(path("target/cache"))`.
  *
@@ -269,15 +297,19 @@ implement Mocking {
 }
 
 /**
- * Verifying, as an effect: what the doubles have been asked, oldest first. A test names the effect and reads it
- * through the words above.
+ * Verifying, as an effect: what the doubles have been asked, oldest first, and what the file system holds now.
+ * Reading either records nothing. A test names the effect and reads it through the words above.
  */
 effect Calls {
    def recordedCalls: List[Call]
+
+   def recordedFiles: List[Entry]
 }
 
 implement Calls {
    def recordedCalls: {State[Recording]} List[Call] = state.journal
+
+   def recordedFiles: {State[Recording]} List[Entry] = state.fileTree
 }
 
 /**
@@ -354,7 +386,7 @@ implement mockFileSystem: FileSystem {
       answering(about("listDirectory", path), r -> entriesOf(keyOf(path), r.fileTree).asPaths)
 
    def walk(path: Path): {State[Recording]} List[Path] =
-      answering(about("walk", path), r -> filesUnder(keyOf(path), r.fileTree).asPaths)
+      answering(about("walk", path), r -> filePathsUnder(keyOf(path), r.fileTree).asPaths)
 
    def createDirectories(path: Path): {State[Recording]} Unit =
       changingFiles(about("createDirectories", path), tree -> placedIn(DirectoryEntry(keyOf(path)), tree))
@@ -633,7 +665,7 @@ private def isDirectoryEntry(at: String, entry: Entry): Bool = entry match {
 /**
  * The files inside `directory`, however deep — what `walk` answers.
  */
-private def filesUnder(directory: String, tree: List[Entry]): List[String] =
+private def filePathsUnder(directory: String, tree: List[Entry]): List[String] =
    tree.filterMap(entry -> filePathInside(directory, entry))
 
 private def filePathInside(directory: String, entry: Entry): Option[String] = entry match {

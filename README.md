@@ -69,6 +69,9 @@ import eliot.test.Mock
 - **Verifying:** `wasCalled`, `wasNeverCalled`, `wasCalledOnce`, `wasCalledTimes`, `wasCalledAtLeast`,
   `wasCalledAtMost`, `wereCalledInOrder`, `nothingWasCalled`, `onlyTheseWereCalled`, plus `calls`,
   `callsMatching`, `callCount`, `lastCall` and `forgetCalls`.
+- **Inspecting the file system:** `fileContentAt`, `existsAt` and `filesUnder` read the in-memory tree **without
+  recording a call**. Check what the code under test wrote with these rather than with `readFile`, `exists` or
+  `walk`, which are recorded like any other call and would change what the verifications see.
 - **Matching:** a fragment matches a call when its words appear in the call next to each other and in order.
   `wasCalled("git clone")` matches `/work$ git clone --mirror x`; `wasCalled("log")` does not match
   `printLine catalog`. A call reads as the operation and its arguments (`printLine hello`, `readFile /etc/hosts`),

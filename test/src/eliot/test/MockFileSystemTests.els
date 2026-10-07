@@ -168,6 +168,44 @@ def testCases: Test = {
 
       readFile(path("/tmp/out")) shouldBe "new"
    }
+   "fileContentAt" should "answer what the code under test wrote, without recording a call" in mocked {
+      writeFile("written", path("/tmp/out"))
+
+      (fileContentAt(path("/tmp/out")) orElse "<missing>") shouldBe "written"
+      calls shouldBe "writeFile /tmp/out"
+   }
+   "fileContentAt" should "answer what the test arranged" in mocked {
+      withFile(path("/etc/hosts"), "127.0.0.1 localhost")
+
+      (fileContentAt(path("/etc/hosts")) orElse "<missing>") shouldBe "127.0.0.1 localhost"
+   }
+   "fileContentAt" should "answer nothing where there is no file, keeping an empty one distinct" in mocked {
+      withFile(path("/tmp/empty"), "")
+      withDirectory(path("/tmp/dir"))
+
+      (fileContentAt(path("/tmp/empty")) orElse "<missing>") shouldBe ""
+      (fileContentAt(path("/tmp/nowhere")) orElse "<missing>") shouldBe "<missing>"
+      (fileContentAt(path("/tmp/dir")) orElse "<missing>") shouldBe "<missing>"
+   }
+   "existsAt" should "see files, directories and the directories files imply, without recording a call" in mocked {
+      withFile(path("/tmp/dir/nested/one"), "1")
+      createDirectories(path("/tmp/made"))
+
+      existsAt(path("/tmp/dir/nested/one")).shouldBeTrue
+      existsAt(path("/tmp/dir")).shouldBeTrue
+      existsAt(path("/tmp/made")).shouldBeTrue
+      existsAt(path("/tmp/elsewhere")).shouldBeFalse
+      calls shouldBe "createDirectories /tmp/made"
+   }
+   "filesUnder" should "answer every file underneath, however deep, and no directory, without recording a call" in mocked {
+      withFile(path("/tmp/dir/one"), "1")
+      withFile(path("/tmp/dir/nested/three"), "3")
+      withDirectory(path("/tmp/dir/empty"))
+      withFile(path("/tmp/beside"), "b")
+
+      filesUnder(path("/tmp/dir")).map(show).sorted.joined(",") shouldBe "/tmp/dir/nested/three,/tmp/dir/one"
+      nothingWasCalled
+   }
    "the filesystem double" should "record every call it is asked, in order" in mocked {
       exists(path("/a"))
       writeFile("x", path("/b"))
