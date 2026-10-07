@@ -64,7 +64,7 @@ import eliot.test.Mock
 ```
 
 - **Arranging:** `whenSpawning(fragment, succeeding(out) | failing(code, err) | exiting(code, out))`,
-  `whenSpawningCreates`, `whenReading`, `withFile`, `withDirectory`, `withVariable`, `withArguments`,
+  `whenSpawningCreates`, `whenSpawningWrites`, `whenReading`, `withFile`, `withDirectory`, `withVariable`, `withArguments`,
   `withWorkingDirectory`. The most recent arrangement wins.
 - **Verifying:** `wasCalled`, `wasNeverCalled`, `wasCalledOnce`, `wasCalledTimes`, `wasCalledAtLeast`,
   `wasCalledAtMost`, `wereCalledInOrder`, `nothingWasCalled`, `onlyTheseWereCalled`, plus `calls`,

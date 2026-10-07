@@ -90,9 +90,27 @@ def exiting(exitCode: Int, output: String): ProcessResult = ProcessResult(exitCo
  * ```
  *
  * It decides only what the command leaves behind; combine it with `whenSpawning` to decide what it prints too.
+ * What a command leaves behind is left only when it **exits 0** — a clone that failed leaves nothing — and, like
+ * `whenSpawning`, the most recent matching `whenSpawningCreates` or `whenSpawningWrites` wins, so a test may
+ * re-arm what a command leaves between two runs of it.
  */
 def whenSpawningCreates(commandFragment: String, created: Path): {Mocking} Unit =
-   arranged(Creating(commandFragment, keyOf(created)))
+   arranged(Creating(commandFragment, DirectoryEntry(keyOf(created))))
+
+/**
+ * Arrange that a command matching `commandFragment` leaves the file `written` behind, holding `content`, the way
+ * `curl --output` does, so the code under test can read, hash or delete what it downloaded:
+ *
+ * ```eliot
+ * whenSpawningWrites("curl", path("target/cache/eliot-jvm.zip.download"), "")
+ * ```
+ *
+ * The file replaces whatever was at its path, and the directories it is in exist from then on. It is left behind
+ * on the terms `whenSpawningCreates`'s directory is: only when the command exits 0, and only by the most recent
+ * matching arrangement of either.
+ */
+def whenSpawningWrites(commandFragment: String, written: Path, content: String): {Mocking} Unit =
+   arranged(Creating(commandFragment, FileEntry(keyOf(written), content)))
 
 /**
  * Arrange the console input: `readLine` answers `lines` one by one, then `None`, which is end of input. Replaces
@@ -377,7 +395,7 @@ private data Call = Asked(operationName: String, operationArguments: List[String
  */
 private data Arrangement =
    Spawning(commandFragment: String, spawnedResult: ProcessResult) |
-   Creating(creatingFragment: String, createdPath: String) |
+   Creating(creatingFragment: String, createdEntry: Entry) |
    Defining(variableName: String, variableValue: String) |
    Passing(passedArguments: List[String]) |
    WorkingIn(workingPath: String)
@@ -490,17 +508,19 @@ private def spawning(spawned: Call): {State[Recording]} ProcessResult =
    recorded(r -> spawnedIn(spawned, r), r -> resultFor(spawned, r))
 
 /**
- * The recording after `spawned` ran: the call is recorded, and whatever `whenSpawningCreates` said it leaves
- * behind is now in the file system.
+ * The recording after `spawned` ran: the call is recorded, and what it leaves behind is now in the file system.
  */
 private def spawnedIn(spawned: Call, r: Recording): Recording =
-   noted(spawned, r).setTree(
-      r.arrangements
-         .filterMap(arrangement -> createdBy(spawned, arrangement))
-         .foldLeft(r.fileTree, created -> tree -> placedIn(DirectoryEntry(created), tree))
-   )
+   noted(spawned, r).setTree(leftBehind(spawned, r).mapOption(entry -> placedIn(entry, r.fileTree)) orElse r.fileTree)
 
-private def createdBy(spawned: Call, arrangement: Arrangement): Option[String] = arrangement match {
+/**
+ * What `spawned` leaves behind: the most recent matching `whenSpawningCreates` or `whenSpawningWrites`, and
+ * nothing for a command that did not exit 0.
+ */
+private def leftBehind(spawned: Call, r: Recording): Option[Entry] =
+   if(resultFor(spawned, r).exitCode == 0) r.arrangements.findMap(arrangement -> createdBy(spawned, arrangement)) else none
+
+private def createdBy(spawned: Call, arrangement: Arrangement): Option[Entry] = arrangement match {
    case Creating(fragment, created) -> someIf(matches(fragment, spawned)) created
    case _                           -> none
 }
