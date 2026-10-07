@@ -45,10 +45,11 @@ has the constructor, which also lets a test arrange a failure and assert that th
   (`readFile`, `exists`, `walk`) goes through the double, so `calls`, `onlyTheseWereCalled` and
   `nothingWasCalled` answered differently depending on whether they were asked before or after the check.
   Task 5, done: `fileContentAt`, `existsAt` and `filesUnder` read the tree and record nothing.
-- **A project's own double cannot journal a call.** `Mocking` and `Calls` take this module's private types, so
+- **A project's own double could not journal a call.** `Mocking` and `Calls` take this module's private types, so
   eliot-build's `TableGit` journals through `Log`, and its operations appear as `log cloneMirror …`, interleaved
-  with whatever the production code really logged. The same leak runs the other way: the public
-  `recordedCalls` answers a `List[Call]` of a private type. Task 6.
+  with whatever the production code really logged. The same leak ran the other way: the public
+  `recordedCalls` answered a `List[Call]` of a private type. Task 6, done: `recordCall`, and `Calls` answers
+  descriptions.
 - **One answer per command.** Code that runs one command twice in a single act — a retry, a fallback — cannot be
   answered "fail, then succeed"; re-arming only works between acts. Task 8.
 - **A command could only leave directories behind.** `whenSpawningCreates` could not model `curl -o file` or
@@ -100,8 +101,17 @@ In rough priority order. "eliot" marks a task that needs an eliot change and a t
    is no file), `existsAt` (a file or a directory, as `exists` answers) and `filesUnder` (as `walk` answers),
    read through a second operation of `Calls`, `recordedFiles`, and recording nothing. The README tells a test
    to check with them. `recordedFiles` answers the private `Entry`, the same leak `recordedCalls` has (task 6).
-6. A public `recordCall(operation, arguments)` on `Mocking`; move eliot-build's `TableGit` off `Log`; stop
-   answering the private `Call` from a public operation.
+6. **Done (2026-10-07).** `recordCall(operation, arguments)` journals a call that reads like the framework's own,
+   through a new `Mocking` operation. `Calls` answers no private type: `recordedCalls` is each call's description
+   (what matching always compared), `recordedFiles` each path with its content, or none for a directory.
+   `Mocking`'s operations still *take* private types — a test cannot construct one, so nothing reaches them but
+   the words, and closing that would take one operation per arrangement kind.
+
+   **eliot-build's side, checked on a scratch tag:** `TableGit` calls `recordCall` instead of `log`, its clause
+   rows trade `Log` for `Mocking`, and the expectations in `CacheTests` and `GitPackagesTests` lose their `log `
+   prefix (`"log tags …"` is now `"tags …"`). With task 9's `downloading` arrangement in `ShellAssetsTests`, the
+   suite is 319 green. It lands when eliot-build moves past eliot-test `v0.2`, together with task 9's change;
+   neither compiles against `v0.2`.
 7. Structured matching: the operation matched on its own, an argument holding spaces quoted in the
    description, and a blank fragment refused rather than matching everything.
 8. Answers in turn: `whenSpawningInTurn(fragment, results)`, consumed like the console input.

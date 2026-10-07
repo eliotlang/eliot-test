@@ -82,8 +82,21 @@ import eliot.test.Mock
   one. A missing file reads as `""`; where answering would hide a difference a test must not rely on — deleting a
   non-empty directory or a path nothing is at, `foldCodePoints` — the double fails the case instead.
 
-For an effect of your own, write a named implementation in the test module and bind it with `with`; see the
-`eliot-code` language guide.
+For an effect of your own, write a named implementation in the test module and bind it with an expression `with`
+inside the mocked body; see the `eliot-code` language guide. Its operations join the same journal as the
+framework's with `recordCall`, so the same words verify them, in order among everything else:
+
+```eliot
+implement recordingDoorbell: Doorbell {
+   def ring(visitor: String): {Mocking} Unit = recordCall("ring", singleton(visitor))
+}
+
+"greetVisitor" should "ring once" in mocked {
+   greetVisitor("Ann") with recordingDoorbell
+
+   wasCalledOnce("ring Ann")
+}
+```
 
 ## Running
 
