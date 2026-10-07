@@ -76,7 +76,8 @@ import eliot.test.Mock
 - **The file system** is an in-memory tree: what the test put there plus what the code under test wrote. A
   directory holding a file exists even if nobody created it.
 - **Limitation:** the doubles cannot raise `IoError` yet, because the standard library offers no way to create
-  one. A missing file reads as `""`.
+  one. A missing file reads as `""`; where answering would hide a difference a test must not rely on — deleting a
+  non-empty directory or a path nothing is at, `foldCodePoints` — the double fails the case instead.
 
 For an effect of your own, write a named implementation in the test module and bind it with `with`; see the
 `eliot-code` language guide.

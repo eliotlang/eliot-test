@@ -86,10 +86,12 @@ section is how the pieces fit. Six modules, each owning one concern and keeping 
   - **Every double's operation is `recorded(update, answer)`**: change the recording, answer from the one before
     the call. `answering`, `changingFiles` and `noting` are its three shapes.
   The tree implies directories: a directory exists when something is inside it, `listDirectory` answers the first
-  step down from each path inside, `walk` files only, `delete` the path and everything under it, and paths are
-  keyed without a trailing `/`. **The doubles cannot raise `IoError`**: the base's `type IoError` has no
+  step down from each path inside, `walk` files only, `delete` one thing — a non-empty directory or a path nothing is at fails the case, as
+  `Files.delete` refuses both — lines end at `\n`, `\r\n` or `\r` with no empty line after a final ending, and paths
+  are keyed without a trailing `/`. **The doubles cannot raise `IoError`**: the base's `type IoError` has no
   constructor a user module can call, so a missing file reads `""`; making failures arrangeable needs one added
-  to eliot's base first.
+  to eliot's base first. Where the platform would raise and answering would mislead (`delete`, `foldCodePoints`), the
+  double fails the case instead. `docs/mock-review.md` lists where the doubles still disagree with the platform.
 
 **Tests register by name, via compile-time reflection — there is no central list.** `foldNamedValues` reifies
 every top-level value named `testCases` as a right fold, `runSuite(name₁, suite₁, runSuite(name₂, suite₂,
@@ -204,7 +206,7 @@ which were carrier artefacts.
   why `Mock`'s fields carry longer names than its parameters.
 
 `./eliotw test` prints, per suite, its module name and one `✔`/`✗` line per subject with each failure detailed
-underneath, then one summary line for the whole run. **120 cases, all passing.**
+underneath, then one summary line for the whole run. **154 cases, all passing.**
 
 > **Compiler version.** Needs eliot `v0.7`: the base's `when`/`unless`, `someIf`, `filterMap`/`findMap`,
 > `includes`, `Eq[Option]` and `first`/`second`, which the assertions and the doubles are written with, and the
