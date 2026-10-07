@@ -23,7 +23,7 @@ The platform is the jvm layer (`eliot/jvm/.../classgen/processor/FileNatives.sca
 | e | `writeFile` onto a directory, `createDirectories` onto a file | swap the entry's kind and keep the children, so the tree can hold a file with something inside it | raise | 3 |
 | f | `foldCodePoints` | answered `initial` unchanged — a wrong answer that reads as a right one | folds the code points | 4, done |
 | g | relative paths | the tree keys a path as shown, so `withWorkingDirectory("/work")` does not make `path("x")` mean `/work/x`; only a trailing `/` is normalised (`./a`, `a//b`, `..` are not) | resolves against the working directory | 10 |
-| h | `whenSpawningCreates` | leaves the directory behind even when the matching `whenSpawning` says the command failed | a failed `git clone` leaves nothing | 9 |
+| h | `whenSpawningCreates` | leaves the directory behind even when the matching `whenSpawning` says the command failed | a failed `git clone` leaves nothing | 9, done |
 
 **The framework is not platform-independent.** `succeeding`, `failing` and `exiting` construct
 `ProcessResult(…)`, a constructor only the jvm layer declares — eliot `v0.7`'s base has `type ProcessResult`
@@ -50,8 +50,8 @@ has the constructor, which also lets a test arrange a failure and assert that th
   `recordedCalls` answers a `List[Call]` of a private type. Task 6.
 - **One answer per command.** Code that runs one command twice in a single act — a retry, a fallback — cannot be
   answered "fail, then succeed"; re-arming only works between acts. Task 8.
-- **A command can only leave directories behind.** `whenSpawningCreates` cannot model `curl -o file` or `unzip`
-  producing files, which is what eliot-build's asset hashing then reads. Task 9.
+- **A command could only leave directories behind.** `whenSpawningCreates` could not model `curl -o file` or
+  `unzip` producing files, which is what eliot-build's asset hashing then reads. Task 9, done: `whenSpawningWrites`.
 - **`writeFile` records the path, not the content,** so what was written is only checked by reading it back —
   which is recorded (above). Task 11.
 - **`runInheritingIo` drops the arranged output**, which the platform sends to the terminal. Task 11.
@@ -65,8 +65,9 @@ has the constructor, which also lets a test arrange a failure and assert that th
   `wasCalledOnce("cloneMirror")` matches `log cloneMirror …`. Task 7.
 - **A blank fragment matches everything** (`isBlank(fragment) || …`): `wasNeverCalled("")` always fails and
   `whenSpawning("", …)` is a catch-all. Neither is documented. Task 7.
-- **Three re-arming rules.** `whenSpawning` is most-recent-wins, `whenSpawningCreates` applies *every* matching
-  arrangement, and `whenReading` replaces the input queue. Task 9.
+- **Three re-arming rules.** `whenSpawning` is most-recent-wins, `whenSpawningCreates` applied *every* matching
+  arrangement, and `whenReading` replaces the input queue. Task 9 made the second most-recent-wins too;
+  `whenReading` still replaces, which for a queue is the same thing.
 - **`forgetCalls` is an arranging word** (it performs `Mocking`) though it is about verification.
 - **Everything verified is text.** `calls` joins with `"; "` because the base has no `Eq`/`Show` for `List`,
   and an argument holding `"; "` makes the text ambiguous. Task 12.
@@ -101,8 +102,13 @@ In rough priority order. "eliot" marks a task that needs an eliot change and a t
 7. Structured matching: the operation matched on its own, an argument holding spaces quoted in the
    description, and a blank fragment refused rather than matching everything.
 8. Answers in turn: `whenSpawningInTurn(fragment, results)`, consumed like the console input.
-9. *Before eliot-build moves past eliot-test `v0.2`* (task 1). `whenSpawningCreates` that can leave a file with content, applies only when the command exits 0, and is
-   most-recent-wins like `whenSpawning`.
+9. **Done (2026-10-07).** `whenSpawningWrites(fragment, file, content)` leaves a file behind; what a command
+   leaves (a directory or a file) is left only when it exits 0, and by the most recent matching arrangement of
+   either word. §1h.
+
+   **What eliot-build needs when it moves past eliot-test `v0.2`.** Checked on a scratch tag: one shared
+   arrangement in `ShellAssetsTests`, `downloading` — `whenSpawningWrites("curl", path(expectedTree ++
+   ".download"), "")` — called first in each mocked case, makes the suite 319 green again; nothing else changes.
 10. Paths resolved against `withWorkingDirectory`'s directory and normalised (`.`, `..`, `//`) in `keyOf`.
 11. The written content in `writeFile`/`appendFile`'s description (shortened), and `runInheritingIo`'s
     arranged output recorded as console output.
