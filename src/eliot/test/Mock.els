@@ -33,7 +33,9 @@ import eliot.test.Assertion
  *
  * **What the doubles cannot do yet** is fail: the standard library's `IoError` has no constructor a test could
  * call, so reading a file that does not exist answers `""` instead of raising, and no arrangement can make a call
- * raise an `IoError`.
+ * raise an `IoError`. Where answering would hide a difference from the platform that a test must not rely on —
+ * deleting a non-empty directory or a path nothing is at, folding a file's code points — the double fails the case
+ * instead, naming the call.
  */
 
 /**
@@ -88,9 +90,27 @@ def exiting(exitCode: Int, output: String): ProcessResult = ProcessResult(exitCo
  * ```
  *
  * It decides only what the command leaves behind; combine it with `whenSpawning` to decide what it prints too.
+ * What a command leaves behind is left only when it **exits 0** — a clone that failed leaves nothing — and, like
+ * `whenSpawning`, the most recent matching `whenSpawningCreates` or `whenSpawningWrites` wins, so a test may
+ * re-arm what a command leaves between two runs of it.
  */
 def whenSpawningCreates(commandFragment: String, created: Path): {Mocking} Unit =
-   arranged(Creating(commandFragment, keyOf(created)))
+   arranged(Creating(commandFragment, DirectoryEntry(keyOf(created))))
+
+/**
+ * Arrange that a command matching `commandFragment` leaves the file `written` behind, holding `content`, the way
+ * `curl --output` does, so the code under test can read, hash or delete what it downloaded:
+ *
+ * ```eliot
+ * whenSpawningWrites("curl", path("target/cache/eliot-jvm.zip.download"), "")
+ * ```
+ *
+ * The file replaces whatever was at its path, and the directories it is in exist from then on. It is left behind
+ * on the terms `whenSpawningCreates`'s directory is: only when the command exits 0, and only by the most recent
+ * matching arrangement of either.
+ */
+def whenSpawningWrites(commandFragment: String, written: Path, content: String): {Mocking} Unit =
+   arranged(Creating(commandFragment, FileEntry(keyOf(written), content)))
 
 /**
  * Arrange the console input: `readLine` answers `lines` one by one, then `None`, which is end of input. Replaces
@@ -130,7 +150,7 @@ def withWorkingDirectory(at: Path): {Mocking} Unit = arranged(WorkingIn(keyOf(at
  * calls shouldBe "readLine; printLine Hello, Bob!"
  * ```
  */
-def calls: {Calls} String = recordedCalls.map(described).joined("; ")
+def calls: {Calls} String = recordedCalls.joined("; ")
 
 /**
  * The calls matching `fragment`, joined the same way as `calls` — for asserting on the arguments of a call
@@ -140,12 +160,12 @@ def calls: {Calls} String = recordedCalls.map(described).joined("; ")
  * callsMatching("git clone") shouldBe ".$ git clone --mirror https://github.com/x/foo target/cache"
  * ```
  */
-def callsMatching(fragment: String): {Calls} String = matchingCalls(fragment).map(described).joined("; ")
+def callsMatching(fragment: String): {Calls} String = matchingCalls(fragment).joined("; ")
 
 /**
  * The most recent call, or `"<none>"` when nothing has been called.
  */
-def lastCall: {Calls} String = recordedCalls.last.mapOption(described) orElse "<none>"
+def lastCall: {Calls} String = recordedCalls.last orElse "<none>"
 
 /**
  * How many calls matched `fragment`.
@@ -157,6 +177,24 @@ def callCount(fragment: String): {Calls} Int = matchingCalls(fragment).size
  * on its own.
  */
 def forgetCalls: {Mocking} Unit = forgotten
+
+/**
+ * Record a call to `operation` with `arguments`, as one of the framework's own doubles records its calls — for a
+ * project's double of its *own* effect, so its operations are verified with the same words, in the same journal,
+ * in the order they happened among everything else:
+ *
+ * ```eliot
+ * implement tableGit: Git {
+ *    def fetch(mirror: Mirror): {Mocking} Unit = recordCall("fetch", singleton(show(mirror.mirrorDirectory)))
+ *    …
+ * }
+ *
+ * wasCalledOnce("fetch target/cache/x")
+ * ```
+ *
+ * The call reads like every other: the operation, then its arguments, separated by spaces.
+ */
+def recordCall(operation: String, arguments: List[String]): {Mocking} Unit = journaled(Asked(operation, arguments))
 
 /**
  * Verify that at least one call matched `fragment`.
@@ -218,8 +256,36 @@ def nothingWasCalled: {Calls, Throw[AssertionError]} Unit =
 def onlyTheseWereCalled(fragments: List[String]): {Calls, Throw[AssertionError]} Unit = {
    val unexpected = recordedCalls.filter(call -> !(fragments.any(fragment -> matches(fragment, call))))
 
-   unless(unexpected.isEmpty) fail("unexpected calls: " ++ unexpected.map(described).joined("; "))
+   unless(unexpected.isEmpty) fail("unexpected calls: " ++ unexpected.joined("; "))
 }
+
+/**
+ * What the file at `at` holds now, or `None` where there is no file — read from the in-memory tree **without
+ * recording a call**, so checking what the code under test wrote does not change what `calls` and the
+ * verifications see:
+ *
+ * ```eliot
+ * writeDigest(archive)                                         // act
+ *
+ * (fileContentAt(path("cache/x.sha256")) orElse "<missing>") shouldBe "beef\n"
+ * onlyTheseWereCalled(singleton("writeFile"))                  // the check above was not a call
+ * ```
+ *
+ * `readFile` through the double answers the same content, and is recorded as the code under test's calls are.
+ */
+def fileContentAt(at: Path): {Calls} Option[String] = recordedTree.findMap(entry -> fileContent(keyOf(at), entry))
+
+/**
+ * Whether anything — a file, or a directory, put there or implied by something inside it — is at `at` now, read
+ * without recording a call. `exists` through the double answers the same and is recorded.
+ */
+def existsAt(at: Path): {Calls} Bool = existsIn(keyOf(at), recordedTree)
+
+/**
+ * The files inside `directory` now, however deep, read without recording a call. `walk` through the double
+ * answers the same and is recorded.
+ */
+def filesUnder(directory: Path): {Calls} List[Path] = filePathsUnder(keyOf(directory), recordedTree).asPaths
 
 /**
  * Arranging, as an effect. The `when…` and `with…` words above perform it; a shared arrangement is an ordinary
@@ -234,6 +300,8 @@ effect Mocking {
 
    def queued(lines: List[String]): Unit
 
+   def journaled(call: Call): Unit
+
    def forgotten: Unit
 }
 
@@ -245,19 +313,26 @@ implement Mocking {
 
    def queued(lines: List[String]): {State[Recording]} Unit = updateState(r -> r.setPendingInput(lines))
 
+   def journaled(call: Call): {State[Recording]} Unit = noting(call)
+
    def forgotten: {State[Recording]} Unit = updateState(r -> r.setJournal(empty))
 }
 
 /**
- * Verifying, as an effect: what the doubles have been asked, oldest first. A test names the effect and reads it
- * through the words above.
+ * Verifying, as an effect: what the doubles have been asked, oldest first, each call as it reads — `printLine
+ * hello`, `/work$ git fetch` — and what the file system holds now, a path with its content, or with none for a
+ * directory. Reading either records nothing. A test names the effect and reads it through the words above.
  */
 effect Calls {
-   def recordedCalls: List[Call]
+   def recordedCalls: List[String]
+
+   def recordedFiles: List[Pair[String, Option[String]]]
 }
 
 implement Calls {
-   def recordedCalls: {State[Recording]} List[Call] = state.journal
+   def recordedCalls: {State[Recording]} List[String] = state.journal.map(described)
+
+   def recordedFiles: {State[Recording]} List[Pair[String, Option[String]]] = state.fileTree.map(pathAndContent)
 }
 
 /**
@@ -294,8 +369,12 @@ implement mockProcess: Process {
 /**
  * The file system double, over the in-memory tree. Every operation is recorded as its name and the path.
  *
- * `foldCodePoints` records the call and answers `initial` unchanged: the standard library offers no way to reach a
- * string's code points from Eliot code.
+ * Lines end the way the platform reads them: at `\n`, `\r\n` or `\r`, and a final line ending ends the last line
+ * rather than starting an empty one.
+ *
+ * `delete` removes one thing, as the platform does: a directory with something inside it, or a path nothing is
+ * at, fails the case. `foldCodePoints` fails the case too, after recording the call: the standard library offers
+ * no way to reach a string's code points from Eliot code, and answering `initial` would read as a right answer.
  */
 implement mockFileSystem: FileSystem {
    def readFile(path: Path): {State[Recording]} String =
@@ -310,8 +389,12 @@ implement mockFileSystem: FileSystem {
    def foldLines[B](initial: B, step: B => String => B, path: Path): {State[Recording]} B =
       answering(about("foldLines", path), r -> linesAt(keyOf(path), r.fileTree).foldLeft(initial, line -> acc -> step(acc)(line)))
 
-   def foldCodePoints[B](initial: B, step: B => Int => B, path: Path): {State[Recording]} B =
-      answering(about("foldCodePoints", path), _ -> initial)
+   def foldCodePoints[B](initial: B, step: B => Int => B, path: Path): {State[Recording], Throw[AssertionError]} B = {
+      noting(about("foldCodePoints", path))
+      fail(described(about("foldCodePoints", path)) ++ ": the mocked FileSystem cannot fold a file's code points")
+
+      initial
+   }
 
    def readLines(path: Path): {State[Recording]} List[String] =
       answering(about("readLines", path), r -> linesAt(keyOf(path), r.fileTree))
@@ -326,13 +409,18 @@ implement mockFileSystem: FileSystem {
       answering(about("listDirectory", path), r -> entriesOf(keyOf(path), r.fileTree).asPaths)
 
    def walk(path: Path): {State[Recording]} List[Path] =
-      answering(about("walk", path), r -> filesUnder(keyOf(path), r.fileTree).asPaths)
+      answering(about("walk", path), r -> filePathsUnder(keyOf(path), r.fileTree).asPaths)
 
    def createDirectories(path: Path): {State[Recording]} Unit =
       changingFiles(about("createDirectories", path), tree -> placedIn(DirectoryEntry(keyOf(path)), tree))
 
-   def delete(path: Path): {State[Recording]} Unit =
-      changingFiles(about("delete", path), tree -> removedFrom(keyOf(path), tree))
+   def delete(path: Path): {State[Recording], Throw[AssertionError]} Unit = {
+      val tree = state.fileTree
+
+      changingFiles(about("delete", path), t -> removedFrom(keyOf(path), t))
+      unless(existsIn(keyOf(path), tree)) refused(about("delete", path), "there is nothing at that path")
+      unless(entriesOf(keyOf(path), tree).isEmpty) refused(about("delete", path), "the directory is not empty")
+   }
 }
 
 /**
@@ -362,7 +450,7 @@ private data Call = Asked(operationName: String, operationArguments: List[String
  */
 private data Arrangement =
    Spawning(commandFragment: String, spawnedResult: ProcessResult) |
-   Creating(creatingFragment: String, createdPath: String) |
+   Creating(creatingFragment: String, createdEntry: Entry) |
    Defining(variableName: String, variableValue: String) |
    Passing(passedArguments: List[String]) |
    WorkingIn(workingPath: String)
@@ -444,12 +532,17 @@ private def described(call: Call): String = call match {
  * Whether `fragment`'s words appear in the call's description, next to each other and in order. Padding both
  * sides with a space is what makes `log` match the word `log` and not the end of `catalog`.
  */
-private def matches(fragment: String, call: Call): Bool =
-   isBlank(fragment) || contains(paddedWords(fragment), paddedWords(described(call)))
+private def matches(fragment: String, call: String): Bool =
+   isBlank(fragment) || contains(paddedWords(fragment), paddedWords(call))
 
 private def paddedWords(text: String): String = " " ++ words(text).joined(" ") ++ " "
 
-private def matchingCalls(fragment: String): {Calls} List[Call] = recordedCalls.filter(call -> matches(fragment, call))
+private def matchingCalls(fragment: String): {Calls} List[String] = recordedCalls.filter(call -> matches(fragment, call))
+
+/**
+ * The file system as `recordedFiles` answers it, read back into the tree's own entries.
+ */
+private def recordedTree: {Calls} List[Entry] = recordedFiles.map(entryOf)
 
 private def callsOrNone: {Calls} String = if(recordedCalls.isEmpty) "none" else calls
 
@@ -463,7 +556,7 @@ private def countMismatch(qualifier: String, count: Int, fragment: String): {Cal
  * The fragments still waiting after walking through `history`: each call matching the first waiting fragment
  * removes it. Empty exactly when the fragments were all seen, in order.
  */
-private def fragmentsNotSeenInOrder(fragments: List[String], history: List[Call]): List[String] =
+private def fragmentsNotSeenInOrder(fragments: List[String], history: List[String]): List[String] =
    history.foldLeft(fragments, call -> waiting -> if(waiting.head.anyOption(next -> matches(next, call))) waiting.tail else waiting)
 
 // ---- Processes --------------------------------------------------------------------------------------------------
@@ -475,18 +568,20 @@ private def spawning(spawned: Call): {State[Recording]} ProcessResult =
    recorded(r -> spawnedIn(spawned, r), r -> resultFor(spawned, r))
 
 /**
- * The recording after `spawned` ran: the call is recorded, and whatever `whenSpawningCreates` said it leaves
- * behind is now in the file system.
+ * The recording after `spawned` ran: the call is recorded, and what it leaves behind is now in the file system.
  */
 private def spawnedIn(spawned: Call, r: Recording): Recording =
-   noted(spawned, r).setTree(
-      r.arrangements
-         .filterMap(arrangement -> createdBy(spawned, arrangement))
-         .foldLeft(r.fileTree, created -> tree -> placedIn(DirectoryEntry(created), tree))
-   )
+   noted(spawned, r).setTree(leftBehind(spawned, r).mapOption(entry -> placedIn(entry, r.fileTree)) orElse r.fileTree)
 
-private def createdBy(spawned: Call, arrangement: Arrangement): Option[String] = arrangement match {
-   case Creating(fragment, created) -> someIf(matches(fragment, spawned)) created
+/**
+ * What `spawned` leaves behind: the most recent matching `whenSpawningCreates` or `whenSpawningWrites`, and
+ * nothing for a command that did not exit 0.
+ */
+private def leftBehind(spawned: Call, r: Recording): Option[Entry] =
+   if(resultFor(spawned, r).exitCode == 0) r.arrangements.findMap(arrangement -> createdBy(spawned, arrangement)) else none
+
+private def createdBy(spawned: Call, arrangement: Arrangement): Option[Entry] = arrangement match {
+   case Creating(fragment, created) -> someIf(matches(fragment, described(spawned))) created
    case _                           -> none
 }
 
@@ -494,7 +589,7 @@ private def resultFor(spawned: Call, r: Recording): ProcessResult =
    r.arrangements.findMap(arrangement -> resultIfMatching(spawned, arrangement)) orElse succeeding("")
 
 private def resultIfMatching(spawned: Call, arrangement: Arrangement): Option[ProcessResult] = arrangement match {
-   case Spawning(fragment, result) -> someIf(matches(fragment, spawned)) result
+   case Spawning(fragment, result) -> someIf(matches(fragment, described(spawned))) result
    case _                          -> none
 }
 
@@ -527,6 +622,14 @@ private def withoutTrailingSlash(text: String): String =
 
 private def asPaths(keys: List[String]): List[Path] = keys.map(path)
 
+private def pathAndContent(entry: Entry): Pair[String, Option[String]] = entry match {
+   case FileEntry(at, content) -> Pair(at, some(content))
+   case DirectoryEntry(at)     -> Pair(at, none)
+}
+
+private def entryOf(recorded: Pair[String, Option[String]]): Entry =
+   recorded.second.mapOption(content -> FileEntry(recorded.first, content)) orElse DirectoryEntry(recorded.first)
+
 private def entryPath(entry: Entry): String = entry match {
    case FileEntry(at, _)    -> at
    case DirectoryEntry(at)  -> at
@@ -549,10 +652,15 @@ private def placedIn(entry: Entry, tree: List[Entry]): List[Entry] =
    prepend(tree.filter(other -> entryPath(other) != entryPath(entry)), entry)
 
 /**
- * `tree` without `at` and everything inside it.
+ * `tree` without the entry at `at`. Whatever is inside it stays: `delete` refuses a directory that is not empty.
  */
-private def removedFrom(at: String, tree: List[Entry]): List[Entry] =
-   tree.filter(entry -> !(entryPath(entry) == at || isInside(at, entryPath(entry))))
+private def removedFrom(at: String, tree: List[Entry]): List[Entry] = tree.filter(entry -> entryPath(entry) != at)
+
+/**
+ * Fail the case where the platform's `FileSystem` would raise an `IoError`, which a double cannot construct yet.
+ */
+private def refused(call: Call, reason: String): {Throw[AssertionError]} Unit =
+   fail(described(call) ++ ": " ++ reason ++ "; the platform raises an IoError here")
 
 private def contentAt(at: String, tree: List[Entry]): String = tree.findMap(entry -> fileContent(at, entry)) orElse ""
 
@@ -561,8 +669,17 @@ private def fileContent(at: String, entry: Entry): Option[String] = entry match 
    case _                            -> none
 }
 
-private def linesAt(at: String, tree: List[Entry]): List[String] =
-   if(contentAt(at, tree) == "") empty else split("\n", contentAt(at, tree))
+private def linesAt(at: String, tree: List[Entry]): List[String] = linesOf(contentAt(at, tree))
+
+/**
+ * `content`'s lines as the platform reads them: `\n`, `\r\n` and `\r` each end a line, and a line ending at the
+ * very end ends the last line rather than starting an empty one — `"a\nb\n"` is two lines, `"\n"` one empty line.
+ */
+private def linesOf(content: String): List[String] = {
+   val unified = content.replace("\r\n", "\n").replace("\r", "\n")
+
+   if(unified == "") empty else if(endsWith("\n", unified)) split("\n", unified).dropLast else split("\n", unified)
+}
 
 /**
  * Something exists at `at` when it was put there, or when anything is inside it.
@@ -584,7 +701,7 @@ private def isDirectoryEntry(at: String, entry: Entry): Bool = entry match {
 /**
  * The files inside `directory`, however deep — what `walk` answers.
  */
-private def filesUnder(directory: String, tree: List[Entry]): List[String] =
+private def filePathsUnder(directory: String, tree: List[Entry]): List[String] =
    tree.filterMap(entry -> filePathInside(directory, entry))
 
 private def filePathInside(directory: String, entry: Entry): Option[String] = entry match {

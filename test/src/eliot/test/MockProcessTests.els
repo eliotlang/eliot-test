@@ -91,6 +91,59 @@ def testCases: Test = {
 
       wasCalledOnce("git clone")
    }
+   "whenSpawningCreates" should "leave nothing behind a command that failed" in mocked {
+      whenSpawningCreates("clone", path("/cache/mirror"))
+      whenSpawning("clone", failing(128, "no such repository"))
+
+      run(command("git").withArgument("clone"), here)
+
+      exists(path("/cache/mirror")).shouldBeFalse
+   }
+   "whenSpawningCreates" should "leave only what the most recent arrangement says, so a test may re-arm it" in mocked {
+      whenSpawningCreates("clone", path("/cache/first"))
+      whenSpawningCreates("clone", path("/cache/second"))
+
+      run(command("git").withArgument("clone"), here)
+
+      exists(path("/cache/first")).shouldBeFalse
+      exists(path("/cache/second")).shouldBeTrue
+   }
+   "whenSpawningWrites" should "leave the file behind, holding the arranged content" in mocked {
+      whenSpawningWrites("curl", path("/cache/asset.download"), "archive bytes")
+
+      run(command("curl").withArgument("--output").withArgument("/cache/asset.download"), here)
+
+      readFile(path("/cache/asset.download")) shouldBe "archive bytes"
+      isDirectory(path("/cache")).shouldBeTrue
+   }
+   "whenSpawningWrites" should "leave nothing before the command has run" in mocked {
+      whenSpawningWrites("curl", path("/cache/asset.download"), "archive bytes")
+
+      exists(path("/cache/asset.download")).shouldBeFalse
+   }
+   "whenSpawningWrites" should "leave nothing behind a command that failed" in mocked {
+      whenSpawningWrites("curl", path("/cache/asset.download"), "archive bytes")
+      whenSpawning("curl", failing(22, "404 Not Found"))
+
+      run(command("curl"), here)
+
+      exists(path("/cache/asset.download")).shouldBeFalse
+   }
+   "whenSpawningWrites" should "replace what was at the path" in mocked {
+      withFile(path("/cache/asset.download"), "stale")
+      whenSpawningWrites("curl", path("/cache/asset.download"), "fresh")
+
+      run(command("curl"), here)
+
+      readFile(path("/cache/asset.download")) shouldBe "fresh"
+   }
+   "whenSpawningWrites" should "leave a file only for a command that matches" in mocked {
+      whenSpawningWrites("curl", path("/cache/asset.download"), "archive bytes")
+
+      run(command("wget"), here)
+
+      exists(path("/cache/asset.download")).shouldBeFalse
+   }
    "runInheritingIo" should "answer the arranged exit code" in mocked {
       whenSpawning("javac", failing(2, "compilation failed"))
 

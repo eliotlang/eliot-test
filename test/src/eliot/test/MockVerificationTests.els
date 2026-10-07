@@ -189,11 +189,51 @@ def testCases: Test = {
 
       wasNeverCalled("printLine after the raise")
    }
+   "recordCall" should "journal a call that reads like the framework's own" in mocked {
+      recordCall("cloneMirror", append(singleton("https://github.com/x/foo"), "target/cache"))
+
+      calls shouldBe "cloneMirror https://github.com/x/foo target/cache"
+   }
+   "recordCall" should "journal an operation with no arguments as the operation alone" in mocked {
+      recordCall("fetch", empty)
+
+      calls shouldBe "fetch"
+   }
+   "recordCall" should "let a project's double be verified in order among the framework's" in mocked {
+      greetVisitor("Ann") with recordingDoorbell
+
+      calls shouldBe "printLine someone is at the door; ring Ann; printLine welcome, Ann"
+      wasCalledOnce("ring Ann")
+      wereCalledInOrder(append(singleton("printLine someone"), "ring"))
+   }
    "an arrangement" should "be shareable as an ordinary definition, which is this framework's @Before" in mocked {
       twoLinesReady
 
       run(command("git").withArgument("ls-remote"), path(".")).standardOutput shouldBe "v1.0\nv1.1"
    }
+}
+
+/**
+ * A project's own effect, for testing `recordCall`: nothing in the framework has a double for it.
+ */
+effect Doorbell {
+   def ring(visitor: String): Unit
+}
+
+/**
+ * The project's double of `Doorbell`: it records each ring in the framework's journal.
+ */
+implement recordingDoorbell: Doorbell {
+   def ring(visitor: String): {Mocking} Unit = recordCall("ring", singleton(visitor))
+}
+
+/**
+ * Code under test performing the project's effect between two of the framework's.
+ */
+def greetVisitor(visitor: String): {Console, Doorbell} Unit = {
+   printLine("someone is at the door")
+   ring(visitor)
+   printLine("welcome, " ++ visitor)
 }
 
 /**

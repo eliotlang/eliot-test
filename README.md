@@ -64,11 +64,14 @@ import eliot.test.Mock
 ```
 
 - **Arranging:** `whenSpawning(fragment, succeeding(out) | failing(code, err) | exiting(code, out))`,
-  `whenSpawningCreates`, `whenReading`, `withFile`, `withDirectory`, `withVariable`, `withArguments`,
+  `whenSpawningCreates`, `whenSpawningWrites`, `whenReading`, `withFile`, `withDirectory`, `withVariable`, `withArguments`,
   `withWorkingDirectory`. The most recent arrangement wins.
 - **Verifying:** `wasCalled`, `wasNeverCalled`, `wasCalledOnce`, `wasCalledTimes`, `wasCalledAtLeast`,
   `wasCalledAtMost`, `wereCalledInOrder`, `nothingWasCalled`, `onlyTheseWereCalled`, plus `calls`,
   `callsMatching`, `callCount`, `lastCall` and `forgetCalls`.
+- **Inspecting the file system:** `fileContentAt`, `existsAt` and `filesUnder` read the in-memory tree **without
+  recording a call**. Check what the code under test wrote with these rather than with `readFile`, `exists` or
+  `walk`, which are recorded like any other call and would change what the verifications see.
 - **Matching:** a fragment matches a call when its words appear in the call next to each other and in order.
   `wasCalled("git clone")` matches `/work$ git clone --mirror x`; `wasCalled("log")` does not match
   `printLine catalog`. A call reads as the operation and its arguments (`printLine hello`, `readFile /etc/hosts`),
@@ -76,10 +79,24 @@ import eliot.test.Mock
 - **The file system** is an in-memory tree: what the test put there plus what the code under test wrote. A
   directory holding a file exists even if nobody created it.
 - **Limitation:** the doubles cannot raise `IoError` yet, because the standard library offers no way to create
-  one. A missing file reads as `""`.
+  one. A missing file reads as `""`; where answering would hide a difference a test must not rely on — deleting a
+  non-empty directory or a path nothing is at, `foldCodePoints` — the double fails the case instead.
 
-For an effect of your own, write a named implementation in the test module and bind it with `with`; see the
-`eliot-code` language guide.
+For an effect of your own, write a named implementation in the test module and bind it with an expression `with`
+inside the mocked body; see the `eliot-code` language guide. Its operations join the same journal as the
+framework's with `recordCall`, so the same words verify them, in order among everything else:
+
+```eliot
+implement recordingDoorbell: Doorbell {
+   def ring(visitor: String): {Mocking} Unit = recordCall("ring", singleton(visitor))
+}
+
+"greetVisitor" should "ring once" in mocked {
+   greetVisitor("Ann") with recordingDoorbell
+
+   wasCalledOnce("ring Ann")
+}
+```
 
 ## Running
 
