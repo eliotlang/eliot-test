@@ -1,0 +1,9 @@
+-- Written by eliot: the commit every selected tag named and the digest of every fetched asset.
+-- Commit it, and do not edit it; a build refuses to go on when what it fetches disagrees.
+
+package test {
+  version github.com/eliotlang/eliot v0.7 141230fb0c3efbecb9df89547ecfaee5385a2ca1
+  asset github.com/eliotlang/eliot v0.7 eliot-compiler.zip dccf8808e1159ed07bd904068c31c954ea14c965d5330a2e25ca98edd08a8b06
+  asset github.com/eliotlang/eliot v0.7 eliot-stdlib.zip ddc3fe5c1c3681bac4533cca530b1fbf062bd08fdd1c918741c5cd255779587a
+  asset github.com/eliotlang/eliot v0.7 eliot-jvm.zip 4dd95639feabac673079d633e0a6fb2afa2ca0eb86ff35a62dc93d3aed88ceed
+}

@@ -246,6 +246,22 @@ The floor is eliot `v0.7`, the first whose base has the conveniences the framewo
 unexpected. `rm -rf target` starts over; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY`
 points the wrapper at a mirror.
 
+### Releasing
+
+A release is an **annotated** tag and nothing else: `v0.<n>`, on whatever commit of `master` is being released.
+No branch is involved — a version's line is the number its tag starts with, and the launcher reads tags and never
+branches (eliot-build's `docs/build-system.md`, "Versions"). There is no CI here and no release asset, so:
+
+```bash
+./eliotw test        # green, on the commit about to be released, pushed
+./eliotw --release   # tags it as the next v0.<n> and pushes that one tag to origin
+```
+
+`--release` (launcher `v0.7`+) refuses a dirty tree, a commit not on the branch it pushes to, a commit that does not
+follow the line's last release and one that release already names; `./eliotw --release v1.0` starts a new line,
+which is never chosen for you. A pushed tag never moves: every consumer's `eliot.lock` records the commit it named
+and refuses a build where it changed, so a mistake is a new tag.
+
 ### The compiler CLI, for a change to the compiler itself
 
 The wrapper runs a *published* toolchain, so a change in the compiler checkout is invisible to it. Drive the
