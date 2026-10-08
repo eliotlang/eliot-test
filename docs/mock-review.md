@@ -94,7 +94,7 @@ In rough priority order. "eliot" marks a task that needs an eliot change and a t
    or task 9 lets the arrangement say what curl leaves behind. Task 9 is the better fix and should come first.
 2. *eliot.* Add `processResult(exitCode, standardOutput, standardError)` to the base, body-less there and
    bodied in jvm like `ioError`, and build `succeeding`/`failing`/`exiting` with it.
-3. **Partly done (2026-10-07), on eliot `v0.8`.** `whenFailing(fragment, failure)` makes a matching file
+3. **Partly done (2026-10-07), on eliot `v0.9`.** `whenFailing(fragment, failure)` makes a matching file
    operation, `run` or `runInheritingIo` raise an `IoError` — recorded, changing nothing, leaving nothing behind —
    ranked with `whenSpawning` by recency, which also covers a program that fails to start (the curl→wget
    fallback). `delete`'s refusals raise an `IoError` instead of failing the case. Left: §1c–e (`readFile` of a

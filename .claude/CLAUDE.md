@@ -95,7 +95,7 @@ section is how the pieces fit. Six modules, each owning one concern and keeping 
   The tree implies directories: a directory exists when something is inside it, `listDirectory` answers the first
   step down from each path inside, `walk` files only, `delete` one thing — a non-empty directory or a path nothing is at raises, as
   `Files.delete` refuses both — lines end at `\n`, `\r\n` or `\r` with no empty line after a final ending, and paths
-  are keyed without a trailing `/`. **A double raises `IoError`** (the base's `ioError`, eliot `v0.8`) where a
+  are keyed without a trailing `/`. **A double raises `IoError`** (the base's `ioError`, eliot `v0.9`) where a
   `whenFailing` arrangement is the most recent to decide the call — every `FileSystem` operation and both spawns
   check it first, through `failingIfArranged` — and where `delete` meets what `Files.delete` refuses. A missing file
   still reads `""`, and `foldCodePoints` fails the case, since no Eliot code can reach a string's code points. `docs/mock-review.md` lists where the doubles still disagree with the platform.
@@ -215,8 +215,9 @@ which were carrier artefacts.
 `./eliotw test` prints, per suite, its module name and one `✔`/`✗` line per subject with each failure detailed
 underneath, then one summary line for the whole run. **193 cases, all passing.**
 
-> **Compiler version.** Needs eliot `v0.8`: the base's `ioError`, which `whenFailing` and `delete` raise. `v0.8`
-> also rejects a declared effect the body never performs, which is why `success` is a plain `Unit`. Before that,
+> **Compiler version.** Needs eliot `v0.9`: the base's `ioError`, which `whenFailing` and `delete` raise (`v0.8` has it
+> but was never published). Since `v0.8` the compiler also rejects a declared effect the body never performs, which
+> is why `success` is a plain `Unit`. Before that,
 > `v0.7`: the base's `when`/`unless`, `someIf`, `filterMap`/`findMap`,
 > `includes`, `Eq[Option]` and `first`/`second`, which the assertions and the doubles are written with, and the
 > fix for two `if..else`s over two kinds of `Option` sharing one `runAbort` (`NoSuchMethodError`). Before that,
@@ -242,7 +243,7 @@ platform and writes no line of its own. `runner` builds the same entry point as 
 repository's suite, depping `//suite` like everybody's. The line is not on `root`, because every closure holding a
 package runs its line and `runner` holds `root`.
 
-The floor is eliot `v0.8`, the first with `ioError`; `v0.7` was the first whose base has the conveniences the framework is written with
+The floor is eliot `v0.9`, the first published tag with `ioError`; `v0.7` was the first whose base has the conveniences the framework is written with
 (`when`/`unless`, `someIf`, `filterMap`/`findMap`, `includes`, `Eq[Option]`, `first`/`second`).
 `./eliotw --project-model` (launcher `v0.6`+) prints the resolved roots as JSON when a build picks something
 unexpected. `rm -rf target` starts over; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY`
