@@ -52,7 +52,8 @@ import eliot.test.Assertion
  */
 def mocked(
       body: {Console, Log, FileSystem, Process, Environment, Mocking, Calls, Throw[IoError], Throw[AssertionError]} Unit
-         with mockConsole with mockLog with mockFileSystem with mockProcess with mockEnvironment
+         with mockConsole with mockLog with mockFileSystem with mockProcess with mockEnvironment with recording
+         with journal
    ): {Throw[AssertionError]} Unit =
    runStateToValue(emptyRecording, catch[IoError, Unit](body, e -> fail("unexpected I/O failure: " ++ show(e))))
 
@@ -361,7 +362,7 @@ effect Mocking {
    def forgotten: Unit
 }
 
-implement Mocking {
+implement recording: Mocking {
    def arranged(arrangement: Arrangement): {State[Recording]} Unit =
       updateState(r -> r.setArrangements(prepend(r.arrangements, arrangement)))
 
@@ -385,7 +386,7 @@ effect Calls {
    def recordedFiles: List[Pair[String, Option[String]]]
 }
 
-implement Calls {
+implement journal: Calls {
    def recordedCalls: {State[Recording]} List[Call] = state.journal
 
    def recordedFiles: {State[Recording]} List[Pair[String, Option[String]]] = state.fileTree.map(pathAndContent)

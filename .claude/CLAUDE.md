@@ -77,7 +77,9 @@ section is how the pieces fit. Six modules, each owning one concern and keeping 
   arranging and verifying words, the inspecting words (`fileContentAt`, `existsAt`, `filesUnder` — the tree, read
   through `Calls`, recording nothing), `recordCall` (a project's own double journals its operations with it), the
   effects `Mocking` and `Calls` (a project names them in rows — eliot-build's `TableGit` declares `Mocking`), the
-  five named implementations, and **`Call(callee, callArguments, callDirectory)`**, one record for every call: an
+  five doubles and `recording`/`journal`, the named implementations of `Mocking`/`Calls` (named rather than
+  anonymous because a definition with a body may give its slot only what it has — eliot `docs/effects.md` D20 rule 5 —
+  so `mocked` binds all seven with `with` on its slot), and **`Call(callee, callArguments, callDirectory)`**, one record for every call: an
   operation is its name and arguments in no directory, a spawned process its program, the rest of its command line
   and `some` directory. `Calls` answers only public types — each `Call`, each path with its content — while
   `Mocking`'s operations take the private ones, which only the words construct. **Private**: everything they keep —
