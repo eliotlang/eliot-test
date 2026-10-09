@@ -38,7 +38,7 @@ def passed(result: TestResult): Bool = result.outcome match {
  *    }
  * }
  *
- * def testCases: {Console} Test = { … }         // the cases may also print, for real
+ * def testCases uses Console: Test = { … }      // the cases may also print, for real
  * ```
  *
  * A suite collects its cases' results through `Writer`, which is all `Test` stands for. Effects listed in front of
@@ -60,7 +60,7 @@ infix none def should(subject: String, shouldPhrase: String): TestCase =
  * word such as `mocked`.
  */
 infix none below should
-def in(testCase: TestCase, body: {Throw[AssertionError]} Unit): Test =
+def in(testCase: TestCase, body uses *, Throw[AssertionError]: Unit): Test =
    tell(singleton(TestResult(testCase, outcomeOf(runThrow(body)))))
 
 private def outcomeOf(raised: Either[AssertionError, Unit]): Outcome = raised.foldEither(error -> FailedWith(error), _ -> Passed)

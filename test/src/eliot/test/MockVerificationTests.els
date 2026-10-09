@@ -270,13 +270,13 @@ effect Doorbell {
  * The project's double of `Doorbell`: it records each ring in the framework's journal.
  */
 implement recordingDoorbell: Doorbell {
-   def ring(visitor: String): {Mocking} Unit = recordCall("ring", singleton(visitor))
+   def ring(visitor: String) uses Mocking: Unit = recordCall("ring", singleton(visitor))
 }
 
 /**
  * Code under test performing the project's effect between two of the framework's.
  */
-def greetVisitor(visitor: String): {Console, Doorbell} Unit = {
+def greetVisitor(visitor: String) uses Console, Doorbell: Unit = {
    printLine("someone is at the door")
    ring(visitor)
    printLine("welcome, " ++ visitor)
@@ -285,12 +285,12 @@ def greetVisitor(visitor: String): {Console, Doorbell} Unit = {
 /**
  * A body that raises a plain reported failure, for testing `raising` itself.
  */
-private def failedWith(report: String): {Throw[AssertionError]} Unit = raise(Failed(report))
+private def failedWith(report: String) uses Throw[AssertionError]: Unit = raise(Failed(report))
 
 /**
  * A body that does something *and then* raises, so the calls it made before raising can be verified.
  */
-private def printedThenFailed: {Console, Throw[AssertionError]} Unit = {
+private def printedThenFailed uses Console, Throw[AssertionError]: Unit = {
    printLine("before the raise")
 
    raise(Failed("boom"))
@@ -301,4 +301,4 @@ private def printedThenFailed: {Console, Throw[AssertionError]} Unit = {
 /**
  * A shared arrangement: an ordinary `{Mocking}` definition, called at the top of a body.
  */
-private def twoLinesReady: {Mocking} Unit = whenSpawning("git ls-remote", succeeding("v1.0\nv1.1"))
+private def twoLinesReady uses Mocking: Unit = whenSpawning("git ls-remote", succeeding("v1.0\nv1.1"))

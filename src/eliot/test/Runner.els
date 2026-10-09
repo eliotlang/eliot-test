@@ -16,10 +16,10 @@ import eliot.test.Arguments
  *
  * Set `NO_COLOR` to any value for a report without colours; `--format=` wins over it.
  */
-def main: {Console, Process, Environment} Unit =
+def main uses Console, Process, Environment: Unit =
    if(unknownOptions(arguments).isEmpty) runSuites else refuse(unknownOptions(arguments))
 
-private def runSuites: {Console, Process, Environment} Unit = {
+private def runSuites uses Console, Process, Environment: Unit = {
    val counts = tally(foldNamedValues("testCases", noResults, runSuite))
    val names = namesIn(arguments)
 
@@ -35,7 +35,7 @@ private def runSuites: {Console, Process, Environment} Unit = {
 /**
  * Say which options were not understood and stop, without having run anything.
  */
-private def refuse(options: List[String]): {Console, Process} Unit = {
+private def refuse(options: List[String]) uses Console, Process: Unit = {
    options.map(option -> "unknown option '" ++ option ++ "'").foreach(printLine)
    registerExitCode(2)
 }
@@ -52,8 +52,8 @@ private def noResults: List[TestResult] = empty
  */
 private def runSuite(
       suiteName: String,
-      suite: {Writer[List[TestResult]]} Unit,
-      rest: {} List[TestResult]): {Console, Environment} List[TestResult] =
+      suite uses *, Writer[List[TestResult]]: Unit,
+      rest uses *: List[TestResult]) uses Console, Environment: List[TestResult] =
    if(selects(namesIn(arguments), suiteName)) {
       val results = runWriterToLog(suite)
 
@@ -64,4 +64,4 @@ private def runSuite(
       results ++ laterResults
    } else rest
 
-private def outputStyle: {Environment} Style = styleOf(arguments, if(environmentVariable("NO_COLOR").isSome) Plain else Colored)
+private def outputStyle uses Environment: Style = styleOf(arguments, if(environmentVariable("NO_COLOR").isSome) Plain else Colored)
