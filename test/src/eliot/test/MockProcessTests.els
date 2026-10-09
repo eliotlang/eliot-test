@@ -238,10 +238,10 @@ private def failureOf(result: TestResult): String = result.outcome match {
 /**
  * Code under test: clone only when the mirror is not there yet.
  */
-private def cloneUnlessPresent: {Process, FileSystem, Throw[IoError]} Unit =
+private def cloneUnlessPresent uses Process, FileSystem, Throw[IoError]: Unit =
    unless(exists(path("/cache/mirror"))) clone
 
-private def clone: {Process, Throw[IoError]} Unit = {
+private def clone uses Process, Throw[IoError]: Unit = {
    run(command("git").withArgument("clone"), here)
 
    unit

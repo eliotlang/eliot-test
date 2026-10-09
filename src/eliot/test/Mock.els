@@ -51,10 +51,10 @@ import eliot.test.Assertion
  * never reach a real file or a real process by accident.
  */
 def mocked(
-      body: {Console, Log, FileSystem, Process, Environment, Mocking, Calls, Throw[IoError], Throw[AssertionError]} Unit
-         with mockConsole with mockLog with mockFileSystem with mockProcess with mockEnvironment with recording
-         with journal
-   ): {Throw[AssertionError]} Unit =
+      body uses *, Console with mockConsole, Log with mockLog, FileSystem with mockFileSystem, Process with mockProcess,
+         Environment with mockEnvironment, Mocking with recording, Calls with journal, Throw[IoError],
+         Throw[AssertionError]: Unit
+   ) uses Throw[AssertionError]: Unit =
    runStateToValue(emptyRecording, catch[IoError, Unit](body, e -> fail("unexpected I/O failure: " ++ show(e))))
 
 /**
@@ -69,7 +69,7 @@ def mocked(
  * command nothing matches succeeds with no output. A blank fragment matches no command, and running anything
  * while one is arranged fails the case.
  */
-def whenSpawning(commandFragment: String, result: ProcessResult): {Mocking} Unit =
+def whenSpawning(commandFragment: String, result: ProcessResult) uses Mocking: Unit =
    whenSpawningInTurn(commandFragment, singleton(result))
 
 /**
@@ -84,7 +84,7 @@ def whenSpawning(commandFragment: String, result: ProcessResult): {Mocking} Unit
  * It is one arrangement, ranked like `whenSpawning`'s: the most recent matching arrangement answers, and only it is
  * used up. Empty `results` answer nothing, so an older arrangement, or the default, answers instead.
  */
-def whenSpawningInTurn(commandFragment: String, results: List[ProcessResult]): {Mocking} Unit =
+def whenSpawningInTurn(commandFragment: String, results: List[ProcessResult]) uses Mocking: Unit =
    arranged(Spawning(commandFragment, results))
 
 /**
@@ -116,7 +116,7 @@ def exiting(exitCode: Int, output: String): ProcessResult = ProcessResult(exitCo
  * `whenSpawning`, the most recent matching `whenSpawningCreates` or `whenSpawningWrites` wins, so a test may
  * re-arm what a command leaves between two runs of it.
  */
-def whenSpawningCreates(commandFragment: String, created: Path): {Mocking} Unit =
+def whenSpawningCreates(commandFragment: String, created: Path) uses Mocking: Unit =
    arranged(Creating(commandFragment, DirectoryEntry(keyOf(created))))
 
 /**
@@ -131,39 +131,39 @@ def whenSpawningCreates(commandFragment: String, created: Path): {Mocking} Unit 
  * on the terms `whenSpawningCreates`'s directory is: only when the command exits 0, and only by the most recent
  * matching arrangement of either.
  */
-def whenSpawningWrites(commandFragment: String, written: Path, content: String): {Mocking} Unit =
+def whenSpawningWrites(commandFragment: String, written: Path, content: String) uses Mocking: Unit =
    arranged(Creating(commandFragment, FileEntry(keyOf(written), content)))
 
 /**
  * Arrange the console input: `readLine` answers `lines` one by one, then `None`, which is end of input. Replaces
  * whatever input was left.
  */
-def whenReading(lines: List[String]): {Mocking} Unit = queued(lines)
+def whenReading(lines: List[String]) uses Mocking: Unit = queued(lines)
 
 /**
  * Put a file holding `content` into the file system.
  */
-def withFile(at: Path, content: String): {Mocking} Unit = placed(FileEntry(keyOf(at), content))
+def withFile(at: Path, content: String) uses Mocking: Unit = placed(FileEntry(keyOf(at), content))
 
 /**
  * Put a directory into the file system.
  */
-def withDirectory(at: Path): {Mocking} Unit = placed(DirectoryEntry(keyOf(at)))
+def withDirectory(at: Path) uses Mocking: Unit = placed(DirectoryEntry(keyOf(at)))
 
 /**
  * Arrange an environment variable.
  */
-def withVariable(name: String, value: String): {Mocking} Unit = arranged(Defining(name, value))
+def withVariable(name: String, value: String) uses Mocking: Unit = arranged(Defining(name, value))
 
 /**
  * Arrange the program's command-line arguments.
  */
-def withArguments(passed: List[String]): {Mocking} Unit = arranged(Passing(passed))
+def withArguments(passed: List[String]) uses Mocking: Unit = arranged(Passing(passed))
 
 /**
  * Arrange the working directory the program sees. Without it, the working directory is `.`.
  */
-def withWorkingDirectory(at: Path): {Mocking} Unit = arranged(WorkingIn(keyOf(at)))
+def withWorkingDirectory(at: Path) uses Mocking: Unit = arranged(WorkingIn(keyOf(at)))
 
 /**
  * Every call made so far, oldest first, as it reads, joined by `"; "`:
@@ -172,7 +172,7 @@ def withWorkingDirectory(at: Path): {Mocking} Unit = arranged(WorkingIn(keyOf(at
  * calls shouldBe "readLine; printLine Hello, Bob!"
  * ```
  */
-def calls: {Calls} String = recordedCalls.joined("; ")
+def calls uses Calls: String = recordedCalls.joined("; ")
 
 /**
  * The calls matching `fragment`, joined the same way as `calls` — for asserting on the arguments of a call
@@ -184,23 +184,23 @@ def calls: {Calls} String = recordedCalls.joined("; ")
  *
  * `recordedCalls` answers the same calls as `Call`s, for reading one argument rather than the whole line.
  */
-def callsMatching(fragment: String): {Calls} String = matchingCalls(fragment).joined("; ")
+def callsMatching(fragment: String) uses Calls: String = matchingCalls(fragment).joined("; ")
 
 /**
  * The most recent call, or `"<none>"` when nothing has been called.
  */
-def lastCall: {Calls} String = recordedCalls.last.mapOption(call -> show(call)) orElse "<none>"
+def lastCall uses Calls: String = recordedCalls.last.mapOption(call -> show(call)) orElse "<none>"
 
 /**
  * How many calls matched `fragment`.
  */
-def callCount(fragment: String): {Calls} Int = matchingCalls(fragment).size
+def callCount(fragment: String) uses Calls: Int = matchingCalls(fragment).size
 
 /**
  * Forget the calls recorded so far, keeping everything arranged — for verifying the second half of a scenario
  * on its own.
  */
-def forgetCalls: {Mocking} Unit = forgotten
+def forgetCalls uses Mocking: Unit = forgotten
 
 /**
  * Record a call to `operation` with `arguments`, as one of the framework's own doubles records its calls — for a
@@ -209,7 +209,7 @@ def forgetCalls: {Mocking} Unit = forgotten
  *
  * ```eliot
  * implement tableGit: Git {
- *    def fetch(mirror: Mirror): {Mocking} Unit = recordCall("fetch", singleton(show(mirror.mirrorDirectory)))
+ *    def fetch(mirror: Mirror) uses Mocking: Unit = recordCall("fetch", singleton(show(mirror.mirrorDirectory)))
  *    …
  * }
  *
@@ -218,12 +218,12 @@ def forgetCalls: {Mocking} Unit = forgotten
  *
  * The call reads like every other: the operation, then its arguments, separated by spaces.
  */
-def recordCall(operation: String, arguments: List[String]): {Mocking} Unit = journaled(Call(operation, arguments, none))
+def recordCall(operation: String, arguments: List[String]) uses Mocking: Unit = journaled(Call(operation, arguments, none))
 
 /**
  * Verify that at least one call matched `fragment`.
  */
-def wasCalled(fragment: String): {Calls, Throw[AssertionError]} Unit = {
+def wasCalled(fragment: String) uses Calls, Throw[AssertionError]: Unit = {
    refusingBlank(fragment)
    when(callCount(fragment) == 0) fail(
       "expected a call matching '" ++ fragment ++ "', but the calls were: " ++ callsOrNone
@@ -233,7 +233,7 @@ def wasCalled(fragment: String): {Calls, Throw[AssertionError]} Unit = {
 /**
  * Verify that no call matched `fragment` — that the code under test did *not* do something.
  */
-def wasNeverCalled(fragment: String): {Calls, Throw[AssertionError]} Unit = {
+def wasNeverCalled(fragment: String) uses Calls, Throw[AssertionError]: Unit = {
    refusingBlank(fragment)
    unless(callCount(fragment) == 0) fail(
       "expected no call matching '" ++ fragment ++ "', but found " ++ callsMatching(fragment)
@@ -243,12 +243,12 @@ def wasNeverCalled(fragment: String): {Calls, Throw[AssertionError]} Unit = {
 /**
  * Verify that exactly one call matched `fragment`.
  */
-def wasCalledOnce(fragment: String): {Calls, Throw[AssertionError]} Unit = wasCalledTimes(1, fragment)
+def wasCalledOnce(fragment: String) uses Calls, Throw[AssertionError]: Unit = wasCalledTimes(1, fragment)
 
 /**
  * Verify that exactly `count` calls matched `fragment`.
  */
-def wasCalledTimes(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit = {
+def wasCalledTimes(count: Int, fragment: String) uses Calls, Throw[AssertionError]: Unit = {
    refusingBlank(fragment)
    unless(callCount(fragment) == count) countMismatch("exactly", count, fragment)
 }
@@ -256,7 +256,7 @@ def wasCalledTimes(count: Int, fragment: String): {Calls, Throw[AssertionError]}
 /**
  * Verify that at least `count` calls matched `fragment`.
  */
-def wasCalledAtLeast(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit = {
+def wasCalledAtLeast(count: Int, fragment: String) uses Calls, Throw[AssertionError]: Unit = {
    refusingBlank(fragment)
    unless(callCount(fragment) >= count) countMismatch("at least", count, fragment)
 }
@@ -264,7 +264,7 @@ def wasCalledAtLeast(count: Int, fragment: String): {Calls, Throw[AssertionError
 /**
  * Verify that at most `count` calls matched `fragment`.
  */
-def wasCalledAtMost(count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit = {
+def wasCalledAtMost(count: Int, fragment: String) uses Calls, Throw[AssertionError]: Unit = {
    refusingBlank(fragment)
    unless(callCount(fragment) <= count) countMismatch("at most", count, fragment)
 }
@@ -272,7 +272,7 @@ def wasCalledAtMost(count: Int, fragment: String): {Calls, Throw[AssertionError]
 /**
  * Verify that calls matching each of `fragments` happened in this order. Other calls may happen in between.
  */
-def wereCalledInOrder(fragments: List[String]): {Calls, Throw[AssertionError]} Unit = {
+def wereCalledInOrder(fragments: List[String]) uses Calls, Throw[AssertionError]: Unit = {
    refusingAnyBlank(fragments)
    unless(fragmentsNotSeenInOrder(fragments, recordedCalls).isEmpty) fail(
       "expected calls in order: " ++ fragments.joined(", ") ++ "; got: " ++ callsOrNone
@@ -282,14 +282,14 @@ def wereCalledInOrder(fragments: List[String]): {Calls, Throw[AssertionError]} U
 /**
  * Verify that nothing was called at all.
  */
-def nothingWasCalled: {Calls, Throw[AssertionError]} Unit =
+def nothingWasCalled uses Calls, Throw[AssertionError]: Unit =
    unless(recordedCalls.isEmpty) fail("expected no calls, but found " ++ calls)
 
 /**
  * Verify that every call matched one of `fragments` — that the code under test did what was expected and nothing
  * else.
  */
-def onlyTheseWereCalled(fragments: List[String]): {Calls, Throw[AssertionError]} Unit = {
+def onlyTheseWereCalled(fragments: List[String]) uses Calls, Throw[AssertionError]: Unit = {
    refusingAnyBlank(fragments)
 
    val unexpected = recordedCalls.filter(call -> !(fragments.any(fragment -> matches(fragment, call))))
@@ -311,19 +311,19 @@ def onlyTheseWereCalled(fragments: List[String]): {Calls, Throw[AssertionError]}
  *
  * `readFile` through the double answers the same content, and is recorded as the code under test's calls are.
  */
-def fileContentAt(at: Path): {Calls} Option[String] = recordedTree.findMap(entry -> fileContent(keyOf(at), entry))
+def fileContentAt(at: Path) uses Calls: Option[String] = recordedTree.findMap(entry -> fileContent(keyOf(at), entry))
 
 /**
  * Whether anything — a file, or a directory, put there or implied by something inside it — is at `at` now, read
  * without recording a call. `exists` through the double answers the same and is recorded.
  */
-def existsAt(at: Path): {Calls} Bool = existsIn(keyOf(at), recordedTree)
+def existsAt(at: Path) uses Calls: Bool = existsIn(keyOf(at), recordedTree)
 
 /**
  * The files inside `directory` now, however deep, read without recording a call. `walk` through the double
  * answers the same and is recorded.
  */
-def filesUnder(directory: Path): {Calls} List[Path] = filePathsUnder(keyOf(directory), recordedTree).asPaths
+def filesUnder(directory: Path) uses Calls: List[Path] = filePathsUnder(keyOf(directory), recordedTree).asPaths
 
 /**
  * One call a double was asked, as `Calls` answers it: what was called, its arguments, and the directory it ran in.
@@ -346,7 +346,7 @@ implement Show[Call] {
 
 /**
  * Arranging, as an effect. The `when…` and `with…` words above perform it; a shared arrangement is an ordinary
- * definition declaring it, such as `def mirrorReady: {Mocking} Unit = withDirectory(path("target/cache"))`.
+ * definition declaring it, such as `def mirrorReady uses Mocking: Unit = withDirectory(path("target/cache"))`.
  *
  * Its operations take this module's internal types, so a test names the effect but calls the words above.
  */
@@ -363,16 +363,16 @@ effect Mocking {
 }
 
 implement recording: Mocking {
-   def arranged(arrangement: Arrangement): {State[Recording]} Unit =
+   def arranged(arrangement: Arrangement) uses State[Recording]: Unit =
       updateState(r -> r.setArrangements(prepend(r.arrangements, arrangement)))
 
-   def placed(entry: Entry): {State[Recording]} Unit = updateState(r -> r.setTree(placedIn(entry, r.fileTree)))
+   def placed(entry: Entry) uses State[Recording]: Unit = updateState(r -> r.setTree(placedIn(entry, r.fileTree)))
 
-   def queued(lines: List[String]): {State[Recording]} Unit = updateState(r -> r.setPendingInput(lines))
+   def queued(lines: List[String]) uses State[Recording]: Unit = updateState(r -> r.setPendingInput(lines))
 
-   def journaled(call: Call): {State[Recording]} Unit = noting(call)
+   def journaled(call: Call) uses State[Recording]: Unit = noting(call)
 
-   def forgotten: {State[Recording]} Unit = updateState(r -> r.setJournal(empty))
+   def forgotten uses State[Recording]: Unit = updateState(r -> r.setJournal(empty))
 }
 
 /**
@@ -387,18 +387,18 @@ effect Calls {
 }
 
 implement journal: Calls {
-   def recordedCalls: {State[Recording]} List[Call] = state.journal
+   def recordedCalls uses State[Recording]: List[Call] = state.journal
 
-   def recordedFiles: {State[Recording]} List[Pair[String, Option[String]]] = state.fileTree.map(pathAndContent)
+   def recordedFiles uses State[Recording]: List[Pair[String, Option[String]]] = state.fileTree.map(pathAndContent)
 }
 
 /**
  * The console double: `printLine` is recorded, `readLine` answers what `whenReading` arranged.
  */
 implement mockConsole: Console {
-   def printLine(s: String): {State[Recording]} Unit = noting(asked("printLine", s))
+   def printLine(s: String) uses State[Recording]: Unit = noting(asked("printLine", s))
 
-   def readLine: {State[Recording]} Option[String] =
+   def readLine uses State[Recording]: Option[String] =
       recorded(r -> noted(askedNothing("readLine"), r).setPendingInput(r.pendingInput.tail), r -> r.pendingInput.head)
 }
 
@@ -406,7 +406,7 @@ implement mockConsole: Console {
  * The log double: a logged line is recorded like any other call, as `log <line>`.
  */
 implement mockLog: Log {
-   def log(s: String): {State[Recording]} Unit = noting(asked("log", s))
+   def log(s: String) uses State[Recording]: Unit = noting(asked("log", s))
 }
 
 /**
@@ -414,13 +414,13 @@ implement mockLog: Log {
  * answered by the most recent matching `whenSpawning` or `whenSpawningInTurn`, which it uses up by one answer.
  */
 implement mockProcess: Process {
-   def run(command: List[String], workingDirectory: Path): {State[Recording], Throw[AssertionError]} ProcessResult =
+   def run(command: List[String], workingDirectory: Path) uses State[Recording], Throw[AssertionError]: ProcessResult =
       spawning(spawnedIn(keyOf(workingDirectory), command))
 
-   def runInheritingIo(command: List[String], workingDirectory: Path): {State[Recording], Throw[AssertionError]} Int =
+   def runInheritingIo(command: List[String], workingDirectory: Path) uses State[Recording], Throw[AssertionError]: Int =
       spawning(spawnedIn(keyOf(workingDirectory), command)).exitCode
 
-   def registerExitCode(code: Int): {State[Recording]} Unit = noting(asked("registerExitCode", show(code)))
+   def registerExitCode(code: Int) uses State[Recording]: Unit = noting(asked("registerExitCode", show(code)))
 }
 
 /**
@@ -434,44 +434,44 @@ implement mockProcess: Process {
  * no way to reach a string's code points from Eliot code, and answering `initial` would read as a right answer.
  */
 implement mockFileSystem: FileSystem {
-   def readFile(path: Path): {State[Recording]} String =
+   def readFile(path: Path) uses State[Recording]: String =
       answering(about("readFile", path), r -> contentAt(keyOf(path), r.fileTree))
 
-   def writeFile(content: String, path: Path): {State[Recording]} Unit =
+   def writeFile(content: String, path: Path) uses State[Recording]: Unit =
       changingFiles(about("writeFile", path), tree -> placedIn(FileEntry(keyOf(path), content), tree))
 
-   def appendFile(content: String, path: Path): {State[Recording]} Unit =
+   def appendFile(content: String, path: Path) uses State[Recording]: Unit =
       changingFiles(about("appendFile", path), tree -> placedIn(FileEntry(keyOf(path), contentAt(keyOf(path), tree) ++ content), tree))
 
-   def foldLines[B](initial: B, step: B => String => B, path: Path): {State[Recording]} B =
+   def foldLines[B](initial: B, step: B => String => B, path: Path) uses State[Recording]: B =
       answering(about("foldLines", path), r -> linesAt(keyOf(path), r.fileTree).foldLeft(initial, line -> acc -> step(acc)(line)))
 
-   def foldCodePoints[B](initial: B, step: B => Int => B, path: Path): {State[Recording], Throw[AssertionError]} B = {
+   def foldCodePoints[B](initial: B, step: B => Int => B, path: Path) uses State[Recording], Throw[AssertionError]: B = {
       noting(about("foldCodePoints", path))
       fail(described(about("foldCodePoints", path)) ++ ": the mocked FileSystem cannot fold a file's code points")
 
       initial
    }
 
-   def readLines(path: Path): {State[Recording]} List[String] =
+   def readLines(path: Path) uses State[Recording]: List[String] =
       answering(about("readLines", path), r -> linesAt(keyOf(path), r.fileTree))
 
-   def exists(path: Path): {State[Recording]} Bool =
+   def exists(path: Path) uses State[Recording]: Bool =
       answering(about("exists", path), r -> existsIn(keyOf(path), r.fileTree))
 
-   def isDirectory(path: Path): {State[Recording]} Bool =
+   def isDirectory(path: Path) uses State[Recording]: Bool =
       answering(about("isDirectory", path), r -> isDirectoryIn(keyOf(path), r.fileTree))
 
-   def listDirectory(path: Path): {State[Recording]} List[Path] =
+   def listDirectory(path: Path) uses State[Recording]: List[Path] =
       answering(about("listDirectory", path), r -> entriesOf(keyOf(path), r.fileTree).asPaths)
 
-   def walk(path: Path): {State[Recording]} List[Path] =
+   def walk(path: Path) uses State[Recording]: List[Path] =
       answering(about("walk", path), r -> filePathsUnder(keyOf(path), r.fileTree).asPaths)
 
-   def createDirectories(path: Path): {State[Recording]} Unit =
+   def createDirectories(path: Path) uses State[Recording]: Unit =
       changingFiles(about("createDirectories", path), tree -> placedIn(DirectoryEntry(keyOf(path)), tree))
 
-   def delete(path: Path): {State[Recording], Throw[AssertionError]} Unit = {
+   def delete(path: Path) uses State[Recording], Throw[AssertionError]: Unit = {
       val tree = state.fileTree
 
       changingFiles(about("delete", path), t -> removedFrom(keyOf(path), t))
@@ -485,13 +485,13 @@ implement mockFileSystem: FileSystem {
  * where it arranged none.
  */
 implement mockEnvironment: Environment {
-   def arguments: {State[Recording]} List[String] =
+   def arguments uses State[Recording]: List[String] =
       answering(askedNothing("arguments"), r -> r.arrangements.findMap(argumentsArranged) orElse empty)
 
-   def environmentVariable(name: String): {State[Recording]} Option[String] =
+   def environmentVariable(name: String) uses State[Recording]: Option[String] =
       answering(asked("environmentVariable", name), r -> r.arrangements.findMap(arrangement -> variableArranged(name, arrangement)))
 
-   def workingDirectory: {State[Recording]} Path =
+   def workingDirectory uses State[Recording]: Path =
       answering(askedNothing("workingDirectory"), r -> path(r.arrangements.findMap(workingDirectoryArranged) orElse "."))
 }
 
@@ -538,7 +538,7 @@ private def setPendingInput(newInput: List[String], r: Recording): Recording =
  * The shape of every double's operation: change the recording with `update`, and answer from the recording as it
  * was *before* the call.
  */
-private def recorded[A](update: Recording => Recording, answer: Recording => A): {State[Recording]} A = {
+private def recorded[A](update: Recording => Recording, answer: Recording => A) uses State[Recording]: A = {
    val before = state
 
    putState(update(before))
@@ -549,18 +549,18 @@ private def recorded[A](update: Recording => Recording, answer: Recording => A):
 /**
  * Record `call` and answer from the recording.
  */
-private def answering[A](call: Call, answer: Recording => A): {State[Recording]} A = recorded(r -> noted(call, r), answer)
+private def answering[A](call: Call, answer: Recording => A) uses State[Recording]: A = recorded(r -> noted(call, r), answer)
 
 /**
  * Record `call` and change the file system with `change`.
  */
-private def changingFiles(call: Call, change: List[Entry] => List[Entry]): {State[Recording]} Unit =
+private def changingFiles(call: Call, change: List[Entry] => List[Entry]) uses State[Recording]: Unit =
    updateState(r -> noted(call, r).setTree(change(r.fileTree)))
 
 /**
  * Record `call`, and nothing else.
  */
-private def noting(call: Call): {State[Recording]} Unit = updateState(r -> noted(call, r))
+private def noting(call: Call) uses State[Recording]: Unit = updateState(r -> noted(call, r))
 
 private def noted(call: Call, r: Recording): Recording = r.setJournal(append(r.journal, call))
 
@@ -614,14 +614,14 @@ private def directoryNamedBy(fragmentWords: List[String]): Option[String] =
  */
 private def paddedWords(of: List[String]): String = " " ++ of.joined(" ") ++ " "
 
-private def matchingCalls(fragment: String): {Calls} List[Call] = recordedCalls.filter(call -> matches(fragment, call))
+private def matchingCalls(fragment: String) uses Calls: List[Call] = recordedCalls.filter(call -> matches(fragment, call))
 
 /**
  * Fail the case for a fragment that names nothing, which would match no call at all.
  */
-private def refusingBlank(fragment: String): {Throw[AssertionError]} Unit = refusingAnyBlank(singleton(fragment))
+private def refusingBlank(fragment: String) uses Throw[AssertionError]: Unit = refusingAnyBlank(singleton(fragment))
 
-private def refusingAnyBlank(fragments: List[String]): {Throw[AssertionError]} Unit = {
+private def refusingAnyBlank(fragments: List[String]) uses Throw[AssertionError]: Unit = {
    val blank = fragments.filter(namesNothing)
 
    unless(blank.isEmpty) fail(
@@ -637,11 +637,11 @@ private def namesNothing(fragment: String): Bool = words(fragment).filter(word -
 /**
  * The file system as `recordedFiles` answers it, read back into the tree's own entries.
  */
-private def recordedTree: {Calls} List[Entry] = recordedFiles.map(entryOf)
+private def recordedTree uses Calls: List[Entry] = recordedFiles.map(entryOf)
 
-private def callsOrNone: {Calls} String = if(recordedCalls.isEmpty) "none" else calls
+private def callsOrNone uses Calls: String = if(recordedCalls.isEmpty) "none" else calls
 
-private def countMismatch(qualifier: String, count: Int, fragment: String): {Calls, Throw[AssertionError]} Unit =
+private def countMismatch(qualifier: String, count: Int, fragment: String) uses Calls, Throw[AssertionError]: Unit =
    raise(NotEqual(
       qualifier ++ " " ++ show(count) ++ (if(count == 1) " call" else " calls") ++ " matching '" ++ fragment ++ "'",
       show(callCount(fragment)) ++ " (" ++ callsOrNone ++ ")"
@@ -659,7 +659,7 @@ private def fragmentsNotSeenInOrder(fragments: List[String], history: List[Call]
 /**
  * Record `spawned` and answer what was arranged for it — or fail the case, where a blank fragment is arranged.
  */
-private def spawning(spawned: Call): {State[Recording], Throw[AssertionError]} ProcessResult = {
+private def spawning(spawned: Call) uses State[Recording], Throw[AssertionError]: ProcessResult = {
    val blank = state.arrangements.filterMap(blankSpawningFragment)
 
    unless(blank.isEmpty) fail(
@@ -793,7 +793,7 @@ private def removedFrom(at: String, tree: List[Entry]): List[Entry] = tree.filte
 /**
  * Fail the case where the platform's `FileSystem` would raise an `IoError`, which a double cannot construct yet.
  */
-private def refused(call: Call, reason: String): {Throw[AssertionError]} Unit =
+private def refused(call: Call, reason: String) uses Throw[AssertionError]: Unit =
    fail(described(call) ++ ": " ++ reason ++ "; the platform raises an IoError here")
 
 private def contentAt(at: String, tree: List[Entry]): String = tree.findMap(entry -> fileContent(at, entry)) orElse ""

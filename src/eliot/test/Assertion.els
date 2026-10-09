@@ -64,31 +64,31 @@ def success: Unit = unit
 /**
  * Fail the test with the given `reason`.
  */
-def fail(reason: String): {Throw[AssertionError]} Unit = raise(Failed(reason))
+def fail(reason: String) uses Throw[AssertionError]: Unit = raise(Failed(reason))
 
 /**
  * Assert that `actual` equals `expected`, failing with `NotEqual` otherwise: `greeting("Bob") shouldBe "Hello, Bob!"`.
  */
-infix def shouldBe[A ~ Eq & Show](actual: A, expected: A): {Throw[AssertionError]} Unit =
+infix def shouldBe[A ~ Eq & Show](actual: A, expected: A) uses Throw[AssertionError]: Unit =
    unless(actual == expected) raise(NotEqual(show(expected), show(actual)))
 
 /**
  * Assert that `actual` differs from `unexpected`, failing with `UnexpectedlyEqual` otherwise.
  */
-infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A): {Throw[AssertionError]} Unit =
+infix at shouldBe def shouldNotBe[A ~ Eq & Show](actual: A, unexpected: A) uses Throw[AssertionError]: Unit =
    when(actual == unexpected) raise(UnexpectedlyEqual(show(actual)))
 
 /**
  * Assert that `actual` is `true`: `exists(path("/tmp/x")).shouldBeTrue`. (`shouldBe true` does not compile,
  * because `Bool` has no `Show`.)
  */
-def shouldBeTrue(actual: Bool): {Throw[AssertionError]} Unit =
+def shouldBeTrue(actual: Bool) uses Throw[AssertionError]: Unit =
    unless(actual) fail("expected true, but was false")
 
 /**
  * Assert that `actual` is `false`: `isDirectory(path("/tmp/x")).shouldBeFalse`.
  */
-def shouldBeFalse(actual: Bool): {Throw[AssertionError]} Unit =
+def shouldBeFalse(actual: Bool) uses Throw[AssertionError]: Unit =
    when(actual) fail("expected false, but was true")
 
 /**
@@ -102,7 +102,7 @@ def shouldBeFalse(actual: Bool): {Throw[AssertionError]} Unit =
  *
  * A passing body passes unchanged.
  */
-infix left below shouldBe def describedAs(body: {Throw[AssertionError]} Unit, newMessage: String): {Throw[AssertionError]} Unit =
+infix left below shouldBe def describedAs(body uses *, Throw[AssertionError]: Unit, newMessage: String) uses Throw[AssertionError]: Unit =
    catch[AssertionError, Unit](body, cause -> raise(Described(newMessage, show(cause))))
 
 /**
@@ -111,7 +111,7 @@ infix left below shouldBe def describedAs(body: {Throw[AssertionError]} Unit, ne
  * Fails with `NotEqual` when the body raises a different error, and with `NoErrorRaised` when it raises nothing.
  * `raising` is the same check comparing only part of the error's text.
  */
-def expect[E ~ Eq & Show](error: E, body: {Throw[E]} Unit): {Throw[AssertionError]} Unit =
+def expect[E ~ Eq & Show](error: E, body uses *, Throw[E]: Unit) uses Throw[AssertionError]: Unit =
    runThrow(body).foldEither(raised -> raised shouldBe error, _ -> raise(NoErrorRaised(show(error))))
 
 /**
@@ -125,13 +125,13 @@ def expect[E ~ Eq & Show](error: E, body: {Throw[E]} Unit): {Throw[AssertionErro
  * the same check comparing the whole error. The error type is written out when the body alone does not say which
  * one it raises, as above.
  */
-def raising[E ~ Show](expectedReport: String, body: {Throw[E]} Unit): {Throw[AssertionError]} Unit =
+def raising[E ~ Show](expectedReport: String, body uses *, Throw[E]: Unit) uses Throw[AssertionError]: Unit =
    runThrow[E, Unit](body).foldEither(
       raised -> reportContaining(expectedReport, show(raised)),
       _ -> fail("expected a raise reporting '" ++ expectedReport ++ "', but nothing was raised")
    )
 
-private def reportContaining(expectedReport: String, report: String): {Throw[AssertionError]} Unit =
+private def reportContaining(expectedReport: String, report: String) uses Throw[AssertionError]: Unit =
    unless(contains(expectedReport, report)) fail(
       "expected a raise reporting '" ++ expectedReport ++ "', but got '" ++ report ++ "'"
    )
