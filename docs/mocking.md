@@ -293,6 +293,9 @@ rather than a constraint, and that is a better reason.
   ever raises one; it reports it as a failed case. Its `catch` spells its type arguments, because the slot's
   row names `Throw` twice and only the call can say which one is discharged.
 - `raising` left `Mocking` and became an ordinary top-level def (fact 3 above).
+- `Mocking` and `Calls` are implemented by the named `recording` and `journal` (2026-10-09), bound on `mocked`'s slot
+  beside the five doubles. Anonymous, they were the slot's `Default`, which the compiler now refuses a definition
+  with a body: only a platform primitive gives an effect from nothing (eliot `docs/effects.md` D20 rule 5).
 - `describedAs` lost its `Id` pin: discharge is a *frame*, so a definition may discharge the very effect it
   declares — the nearest enclosing frame is its own.
 - **`pure { … }` is deleted.** It forbade *all* effects by pinning the body to `Id`, and a slot's row no
