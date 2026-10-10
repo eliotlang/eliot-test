@@ -42,7 +42,7 @@ The suite's return type says which effects its cases may perform:
 
 ```eliot
 def testCases: Test = { … }               // the cases may assert, and nothing else
-def testCases: {Console} Test = { … }     // the cases may also print, for real
+def testCases uses Console: Test = { … } // the cases may also print, for real
 ```
 
 ### Mocking
@@ -93,7 +93,7 @@ framework's with `recordCall`, so the same words verify them, in order among eve
 
 ```eliot
 implement recordingDoorbell: Doorbell {
-   def ring(visitor: String): {Mocking} Unit = recordCall("ring", singleton(visitor))
+   def ring(visitor: String) uses Mocking: Unit = recordCall("ring", singleton(visitor))
 }
 
 "greetVisitor" should "ring once" in mocked {
