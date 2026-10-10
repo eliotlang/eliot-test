@@ -29,7 +29,7 @@ section is how the pieces fit. Six modules, each owning one concern and keeping 
   `data Outcome = Passed | FailedWith(assertionError)` is what running it came to; `data TestResult(testCase,
   outcome)` the two together, with `passed(result)` the one predicate everything else asks. **Nothing stores a
   computation**: a body runs where it is written. `type Test = {Writer[List[TestResult]]} Unit` is a **row alias**
-  — what a suite returns, composing with a written-out row (`{Console} Test`) to widen what its cases may do. It
+  — what a suite returns, composing with a `uses` clause (`def testCases uses Console: Test`) to widen what its cases may do. It
   works in return position only, which is why `in`'s and `runSuite`'s slots write the row out. `"…" should "…"`
   builds a `TestCase`; `testCase in body` runs `body`, discharging `Throw[AssertionError]` — the one entry its
   slot supplies — and `tell`s the result, so a failing assertion stops that case and no other.
@@ -65,7 +65,7 @@ section is how the pieces fit. Six modules, each owning one concern and keeping 
   — a silently ignored filter looks like a pass. Operators `+`, `==` and `&&` have no relative precedence, so
   these expressions parenthesize. `--format=teamcity` selects the service-message report (see `Report`).
 
-- `eliot.test.Runner` — `def main: {Console, Process, Environment} Unit`, and nothing but effects:
+- `eliot.test.Runner` — `def main uses Console, Process, Environment: Unit`, and nothing but effects:
   `foldNamedValues("testCases", noResults, runSuite)` folds every suite; `runSuite` runs one
   (`runWriterToLog(suite)`), prints its `suiteReport`, **then** forces `rest`, so each suite's report sits next to
   what its own cases printed; `main` prints the `summary` and exits 1 unless `allPassed`. `NO_COLOR` selects
@@ -121,7 +121,7 @@ A suite's return type says what its tests may do. Declare the effect and write t
 implementation is whatever the `Runner` binds at `main`:
 
 ```eliot
-def testCases: {Console} Test = {
+def testCases uses Console: Test = {
    "real effects" should "be available to a body whose suite declares them" in {
       printLine(" | (printed by a test performing a real Console effect)")
       success
@@ -133,14 +133,15 @@ A failed assertion stops **that case** — `in` discharges `Throw[AssertionError
 still runs. A bare `Test` suite rejects a body that performs ("This value performs the effect 'Console' but does
 not declare it").
 
-> **A row cannot be closed.** There is no way to say "this body may perform *nothing*, whatever the suite
-> allows". That is what `in pure { … }` meant, and it is **deleted**: a slot's row says what it *supplies*, not
-> what it forbids, and an entry it does not supply continues the walk into the caller's scope. Making it
-> expressible would be a language addition. A case that should perform nothing simply performs nothing.
+> **A clause can be closed now, and `pure { … }` is not back (yet).** `in`'s slot is open (`body uses *,
+> Throw[AssertionError]: Unit`), so a case may use whatever its suite declares. Since eliot's D21 a clause without
+> `*` — `body uses Throw[AssertionError]: Unit` — admits nothing from around it, which is exactly what `in pure { … }`
+> meant before it was deleted. Reinstating it is this framework's call and has not been made; until then a case
+> that should perform nothing simply performs nothing.
 
 ### A named implementation, for determinism
 
-Production code that declares `{Console}` can equally run against a double, because **the implementation is the
+Production code that declares `uses Console` can equally run against a double, because **the implementation is the
 injection point**. The test declares its own named `implement`; production code is untouched and names nothing.
 `test/src/eliot/test/example/` is the worked example of a project's side of that: `Greeter` is the application under
 test and `GreeterTests` registers its pure, mocked and real-effect cases in **one** suite. The `Terminal` sketch
@@ -153,13 +154,13 @@ effect Terminal {
    def read: String
 }
 
-def greet: {Terminal} Unit = {                  // production code
+def greet uses Terminal: Unit = {                // production code
    val name = read
    write("Hello, " ++ name ++ "!")
 }
 
 implement session: Terminal {                   // the test's double, in the test module
-   def write(line: String): {Writer[String]} Unit = tell(line ++ ";")
+   def write(line: String) uses Writer[String]: Unit = tell(line ++ ";")
    def read: String = "Bob"
 }
 
@@ -169,17 +170,17 @@ def greetTranscript: String = runWriterToLog(greet with session)
 A double **cannot cheat**: a user module declares no natives, so an implementation reaches the world only
 through effects **its own clauses declare** — which are charged, and bound, at the binding site. A double
 **keeps its own state through an effect** (`Writer[String]` above), discharged where it is bound, never
-appearing in `greet`'s row. And interpretation is **per effect**: `body with mockConsole with mockFileSystem`
+appearing in `greet`'s clause. And interpretation is **per effect**: `body with mockConsole with mockFileSystem`
 leaves everything else at its default.
 
 ### An author's own word
 
 For a project's **own** effect there is no ready double, so the project writes the binding word itself. Give a def
-a single `{…}`-rowed parameter with the `with` on its slot type and it reads as a bare word with a block — the
+a single code parameter with the `with` on its clause entry and it reads as a bare word with a block — the
 shape `mocked` has, and `mocked` is this repo's only instance of it:
 
 ```eliot
-def onTerminal(body: {Terminal, Throw[AssertionError]} Unit with session): {Throw[AssertionError]} Unit = …
+def onTerminal(body uses *, Terminal with session, Throw[AssertionError]: Unit) uses Throw[AssertionError]: Unit = …
 
 "greet" should "greet whoever the terminal offers" in onTerminal {
    greet
@@ -192,7 +193,7 @@ which were carrier artefacts.
 
 ## What does not work
 
-- **A row cannot be closed** (above) — `pure { … }` has no v6 spelling.
+- **`pure { … }` is not reinstated** (above), though a closed clause could now express it.
 - **Sometimes a discharger's type arguments must be spelled.** The compiler reads a supplied entry's arguments
   off the *actual's declaration*; where nothing answers it refuses to guess ("Cannot tell which 'Throw' this
   call supplies… Write it out at the call"). This framework hits all three shapes: the actual is a **parameter**
@@ -200,8 +201,10 @@ which were carrier artefacts.
   **raises nothing** (`raising[AssertionError]("expected", printLine(…))` in `MockVerificationTests`), or the
   slot's row names the **same ability twice** (`catch[IoError, Unit](…)` in `mocked`). A bare `raise("…")` is the
   generic `raise[A](err: E)`, so its declaration says nothing either: `raising[String]("…", raise("…"))` in
-  `BasicAssertionsTests`.
-- **A computation may not be `val`-bound or dot-chained before being discharged.** Both are rowless positions,
+  `BasicAssertionsTests`. Since eliot's D21 a **code parameter's** own clause can answer the parameter shape — measured
+  for `runThrow(body)`, not for `catch` (eliot `docs/effects.md` §2.2) — so some of these spellings may now be
+  redundant; none has been removed.
+- **A computation may not be `val`-bound or dot-chained before being discharged.** Both are value positions,
   so the call *runs* there and the enclosing def is charged with the effect. Pass it to the discharger directly.
 - **`import eliot.collection.List` shadows `Effect`'s `map`/`flatMap`** — no longer a hazard here, since there
   is no `eliot.carrier` and nothing to shadow.
@@ -217,7 +220,9 @@ which were carrier artefacts.
 `./eliotw test` prints, per suite, its module name and one `✔`/`✗` line per subject with each failure detailed
 underneath, then one summary line for the whole run. **183 cases, all passing.**
 
-> **Compiler version.** Needs eliot `v0.7`: the base's `when`/`unless`, `someIf`, `filterMap`/`findMap`,
+> **Compiler version.** The sources are written in eliot's `uses` surface (D21), which **no eliot release carries
+> yet** — `v0.7` rejects it — so until the next tag this repository builds only against an eliot checkout (below),
+> and `eliot.pkg`'s `dep` line moves when that tag exists. Before `uses`, it needed eliot `v0.7`: the base's `when`/`unless`, `someIf`, `filterMap`/`findMap`,
 > `includes`, `Eq[Option]` and `first`/`second`, which the assertions and the doubles are written with, and the
 > fix for two `if..else`s over two kinds of `Option` sharing one `runAbort` (`NoSuchMethodError`). Before that,
 > `2c3db71` (2026-09-12) — effects v6, the fix for an under-applied ability-implementation native (`32406522`,

@@ -4,6 +4,8 @@
 > `.claude/CLAUDE.md` describes what is in the tree. Since 2026-10-04 the journal holds structured calls matched
 > **by words** rather than by substring, the file system is an in-memory tree kept apart from the arrangements,
 > `raising` lives in `eliot.test.Assertion`, and `Recording`/`Arrangement` are private to `eliot.test.Mock`.
+> Its samples use the brace row spelling (`{Mocking} Unit`), which eliot's D21 retired: read `def f: {E} A` as
+> `def f uses E: A` and a parameter's `x: {E} A` as `x uses *, E: A`.
 
 Status: **BUILT**, 2026-09-04, as `eliot.test.Mock`, and **carried onto effects v6 on 2026-09-09**. 96 cases
 cover it here and `eliot-build` migrated onto it (146 green, its 195-line fixture deleted). §6 records what
