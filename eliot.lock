@@ -2,8 +2,8 @@
 -- Commit it, and do not edit it; a build refuses to go on when what it fetches disagrees.
 
 package test {
-  version github.com/eliotlang/eliot v0.7 141230fb0c3efbecb9df89547ecfaee5385a2ca1
-  asset github.com/eliotlang/eliot v0.7 eliot-compiler.zip dccf8808e1159ed07bd904068c31c954ea14c965d5330a2e25ca98edd08a8b06
-  asset github.com/eliotlang/eliot v0.7 eliot-stdlib.zip ddc3fe5c1c3681bac4533cca530b1fbf062bd08fdd1c918741c5cd255779587a
-  asset github.com/eliotlang/eliot v0.7 eliot-jvm.zip 4dd95639feabac673079d633e0a6fb2afa2ca0eb86ff35a62dc93d3aed88ceed
+  version github.com/eliotlang/eliot v0.10 5b0225a187029d78c3453867ca1f8d0c1c49fcfe
+  asset github.com/eliotlang/eliot v0.10 eliot-compiler.zip 3493c6eca93c6c10f5414bc6c5dfa4b7a962581275b6fae41f75ecda9aedb67b
+  asset github.com/eliotlang/eliot v0.10 eliot-stdlib.zip d027ac7c4a901f973813d8d7bf00f5d001509512a5e13fdb27a5acc900c8d15b
+  asset github.com/eliotlang/eliot v0.10 eliot-jvm.zip 08ee5e5fb49649cb4c81578ead5ece0ee1ea28f86f29d762e1bd6aa379bdeaf3
 }
