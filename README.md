@@ -144,8 +144,8 @@ framework by depending on its `suite` package next to its platform:
 ```
 package test {
   at test
-  dep github.com/eliotlang/eliot-test//suite v0.4
-  dep github.com/eliotlang/eliot//jvm v0.10
+  dep github.com/eliotlang/eliot-test//suite v0.5
+  dep github.com/eliotlang/eliot//jvm v0.11
 }
 ```
 

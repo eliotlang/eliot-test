@@ -53,7 +53,7 @@ private def noResults: List[TestResult] = empty
 private def runSuite(
       suiteName: String,
       suite uses *, Writer[List[TestResult]]: Unit,
-      rest uses *: List[TestResult]) uses Console, Environment: List[TestResult] =
+      rest uses *: List[TestResult]) uses *, Console, Environment: List[TestResult] =
    if(selects(namesIn(arguments), suiteName)) {
       val results = runWriterToLog(suite)
 

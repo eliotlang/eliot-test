@@ -267,7 +267,7 @@ private def refusals: Test = {
 /**
  * What `body` raised, as its message, or `"no failure"` where it raised nothing.
  */
-private def ioFailureOf(body uses *, Throw[IoError]: Unit): String = catch[IoError, String]({
+private def ioFailureOf(body uses *, Throw[IoError]: Unit) uses *: String = catch[IoError, String]({
    body
    "no failure"
 }, e -> show(e))

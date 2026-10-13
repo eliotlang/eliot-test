@@ -60,7 +60,7 @@ infix none def should(subject: String, shouldPhrase: String): TestCase =
  * word such as `mocked`.
  */
 infix none below should
-def in(testCase: TestCase, body uses *, Throw[AssertionError]: Unit): Test =
+def in(testCase: TestCase, body uses *, Throw[AssertionError]: Unit) uses *: Test =
    tell(singleton(TestResult(testCase, outcomeOf(runThrow(body)))))
 
 private def outcomeOf(raised: Either[AssertionError, Unit]): Outcome = raised.foldEither(error -> FailedWith(error), _ -> Passed)

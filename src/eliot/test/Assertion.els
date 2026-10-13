@@ -102,7 +102,7 @@ def shouldBeFalse(actual: Bool) uses Throw[AssertionError]: Unit =
  *
  * A passing body passes unchanged.
  */
-infix left below shouldBe def describedAs(body uses *, Throw[AssertionError]: Unit, newMessage: String) uses Throw[AssertionError]: Unit =
+infix left below shouldBe def describedAs(body uses *, Throw[AssertionError]: Unit, newMessage: String) uses *, Throw[AssertionError]: Unit =
    catch[AssertionError, Unit](body, cause -> raise(Described(newMessage, show(cause))))
 
 /**
@@ -111,7 +111,7 @@ infix left below shouldBe def describedAs(body uses *, Throw[AssertionError]: Un
  * Fails with `NotEqual` when the body raises a different error, and with `NoErrorRaised` when it raises nothing.
  * `raising` is the same check comparing only part of the error's text.
  */
-def expect[E ~ Eq & Show](error: E, body uses *, Throw[E]: Unit) uses Throw[AssertionError]: Unit =
+def expect[E ~ Eq & Show](error: E, body uses *, Throw[E]: Unit) uses *, Throw[AssertionError]: Unit =
    runThrow(body).foldEither(raised -> raised shouldBe error, _ -> raise(NoErrorRaised(show(error))))
 
 /**
@@ -125,7 +125,7 @@ def expect[E ~ Eq & Show](error: E, body uses *, Throw[E]: Unit) uses Throw[Asse
  * the same check comparing the whole error. The error type is written out when the body alone does not say which
  * one it raises, as above.
  */
-def raising[E ~ Show](expectedReport: String, body uses *, Throw[E]: Unit) uses Throw[AssertionError]: Unit =
+def raising[E ~ Show](expectedReport: String, body uses *, Throw[E]: Unit) uses *, Throw[AssertionError]: Unit =
    runThrow[E, Unit](body).foldEither(
       raised -> reportContaining(expectedReport, show(raised)),
       _ -> fail("expected a raise reporting '" ++ expectedReport ++ "', but nothing was raised")

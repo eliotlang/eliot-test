@@ -53,7 +53,7 @@ def mocked(
       body uses *, Console with mockConsole, Log with mockLog, FileSystem with mockFileSystem, Process with mockProcess,
          Environment with mockEnvironment, Mocking with recording, Calls with journal, Throw[IoError],
          Throw[AssertionError]: Unit
-   ) uses Throw[AssertionError]: Unit =
+   ) uses *, Throw[AssertionError]: Unit =
    runStateToValue(emptyRecording, catch[IoError, Unit](body, e -> fail("unexpected I/O failure: " ++ show(e))))
 
 /**

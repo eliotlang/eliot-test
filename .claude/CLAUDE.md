@@ -180,7 +180,7 @@ a single code parameter with the `with` on its clause entry and it reads as a ba
 shape `mocked` has, and `mocked` is this repo's only instance of it:
 
 ```eliot
-def onTerminal(body uses *, Terminal with session, Throw[AssertionError]: Unit) uses Throw[AssertionError]: Unit = …
+def onTerminal(body uses *, Terminal with session, Throw[AssertionError]: Unit) uses *, Throw[AssertionError]: Unit = …
 
 "greet" should "greet whoever the terminal offers" in onTerminal {
    greet
@@ -220,7 +220,8 @@ which were carrier artefacts.
 `./eliotw test` prints, per suite, its module name and one `✔`/`✗` line per subject with each failure detailed
 underneath, then one summary line for the whole run. **193 cases, all passing.**
 
-> **Compiler version.** Needs eliot `v0.10`, the first whose compiler lets `mocked`'s slot bind a double raising
+> **Compiler version.** Needs eliot `v0.11`, the first that reads `uses *` on a definition taking `uses *` code
+> (D24), which the sources write. `v0.10` was the first whose compiler lets `mocked`'s slot bind a double raising
 > `IoError` while `mocked` declares only `Throw[AssertionError]` (`v0.9` read the two `Throw`s as one). `v0.9` was
 > the first release carrying the `uses` surface (D21) the sources are written in, and the first published one with
 > the base's `ioError`, which `whenFailing` and `delete` raise (`v0.8`
@@ -251,7 +252,7 @@ platform and writes no line of its own. `runner` builds the same entry point as 
 repository's suite, depping `//suite` like everybody's. The line is not on `root`, because every closure holding a
 package runs its line and `runner` holds `root`.
 
-The floor is eliot `v0.10`, the first whose doubles may raise `IoError` on `mocked`'s slot (`v0.9` was the first with `uses` and the first published one with `ioError`); `v0.7` was the first whose base has the conveniences the framework is written with
+The floor is eliot `v0.11`, the first with D24's `uses *` on a definition; `v0.10` was the first whose doubles may raise `IoError` on `mocked`'s slot (`v0.9` was the first with `uses` and the first published one with `ioError`); `v0.7` was the first whose base has the conveniences the framework is written with
 (`when`/`unless`, `someIf`, `filterMap`/`findMap`, `includes`, `Eq[Option]`, `first`/`second`).
 `./eliotw --project-model` (launcher `v0.6`+) prints the resolved roots as JSON when a build picks something
 unexpected. `rm -rf target` starts over; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY`
