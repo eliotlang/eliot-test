@@ -11,7 +11,7 @@ import eliot.test.example.Greeter
  *
  * They mix because `in` supplies only the assertion effect: what a body may do is decided by this suite's declared
  * row (which admits `{Console}`) and by `mocked` where a case wants doubles. **No implementation is named anywhere
- * here, and no fixture is written** — the doubles are the framework's, bound by `mocked`'s own slot.
+ * here, and no fixture is written** — the doubles are the framework's, bound by `mocked` around its body.
  */
 def testCases uses Console: Test = {
    // --- 1. a unit test over pure logic ----------------------------------------------------------------------------
