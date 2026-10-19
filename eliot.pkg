@@ -22,7 +22,10 @@
 -- is this repository's own suite, at `test/src`, and it runs the way every consumer's does — through
 -- `//suite`.
 --
--- `v0.11` is the floor because it is the first eliot tag that reads a definition taking `uses *` code with `uses *`
+-- `v0.18` is the tag this is tested on: eliot's capability passing (D36, `v0.17`) with its handles erased. It is
+-- not a floor the sources force — they compile from `v0.11` on — but `v0.15` and later refuse a `with` on a slot, so
+-- `mocked` binds its doubles with a `with` around its run of the code instead, and eliot-test `v0.5` cannot be used
+-- with them. `v0.11` was the floor as the first eliot tag that reads a definition taking `uses *` code with `uses *`
 -- in its own clause too (D24), which every such signature here now writes and every earlier tag refuses. `v0.10`
 -- was the floor as the first eliot tag whose compiler lets `mocked`'s slot bind a double that
 -- raises `IoError` while `mocked` itself declares only `Throw[AssertionError]` (`v0.9` read the two `Throw`s as
@@ -38,8 +41,8 @@ launcher v0.7
 
 package root {
   at .
-  dep github.com/eliotlang/eliot//lang v0.11
-  dep github.com/eliotlang/eliot//stdlib v0.11
+  dep github.com/eliotlang/eliot//lang v0.18
+  dep github.com/eliotlang/eliot//stdlib v0.18
 }
 
 package suite {
@@ -49,11 +52,11 @@ package suite {
 
 package runner {
   dep //root
-  dep github.com/eliotlang/eliot//jvm v0.11
+  dep github.com/eliotlang/eliot//jvm v0.18
   compiler exe-jar -m eliot.test.Runner
 }
 
 package test {
   dep //suite
-  dep github.com/eliotlang/eliot//jvm v0.11
+  dep github.com/eliotlang/eliot//jvm v0.18
 }
