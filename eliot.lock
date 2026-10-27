@@ -2,15 +2,15 @@
 -- Commit it, and do not edit it; a build refuses to go on when what it fetches disagrees.
 
 package runner {
-  version github.com/eliotlang/eliot v0.18 bc6ef7f1a34fd951d5007e8b0b2adc358d012f17
-  asset github.com/eliotlang/eliot v0.18 eliot-compiler.zip d811a033ae3b293acb05598625ccc896d0ad70646079315627ee7e6e9e434e57
-  asset github.com/eliotlang/eliot v0.18 eliot-stdlib.zip 2f5f5fc2d53f5b3c833714d21980cc8bf3cba9f2c7f7014011a09a54813dec96
-  asset github.com/eliotlang/eliot v0.18 eliot-jvm.zip b7becb198675ba6e0e69c783e3633f9de3ae1f00a909ff446823d6ff6f01481e
+  version github.com/eliotlang/eliot v0.19 03a0255635c11bf2a6619f8dc23fa0ff72f9fdce
+  asset github.com/eliotlang/eliot v0.19 eliot-compiler.zip d4efe56c7c5f759329dc8ce1aabd9b8811face636ce70bc41cb86b6145d0093d
+  asset github.com/eliotlang/eliot v0.19 eliot-stdlib.zip b7f5edcd92dee1bef630b12a2f4a78328789764cb203219cab2423c2c5b9cafd
+  asset github.com/eliotlang/eliot v0.19 eliot-jvm.zip 9859e5b83c695da6a110dcb257280e6322b49be5314fd2277305ad73fee0ae0c
 }
 
 package test {
-  version github.com/eliotlang/eliot v0.18 bc6ef7f1a34fd951d5007e8b0b2adc358d012f17
-  asset github.com/eliotlang/eliot v0.18 eliot-compiler.zip d811a033ae3b293acb05598625ccc896d0ad70646079315627ee7e6e9e434e57
-  asset github.com/eliotlang/eliot v0.18 eliot-stdlib.zip 2f5f5fc2d53f5b3c833714d21980cc8bf3cba9f2c7f7014011a09a54813dec96
-  asset github.com/eliotlang/eliot v0.18 eliot-jvm.zip b7becb198675ba6e0e69c783e3633f9de3ae1f00a909ff446823d6ff6f01481e
+  version github.com/eliotlang/eliot v0.19 03a0255635c11bf2a6619f8dc23fa0ff72f9fdce
+  asset github.com/eliotlang/eliot v0.19 eliot-compiler.zip d4efe56c7c5f759329dc8ce1aabd9b8811face636ce70bc41cb86b6145d0093d
+  asset github.com/eliotlang/eliot v0.19 eliot-stdlib.zip b7f5edcd92dee1bef630b12a2f4a78328789764cb203219cab2423c2c5b9cafd
+  asset github.com/eliotlang/eliot v0.19 eliot-jvm.zip 9859e5b83c695da6a110dcb257280e6322b49be5314fd2277305ad73fee0ae0c
 }

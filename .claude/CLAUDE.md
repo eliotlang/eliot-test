@@ -220,7 +220,7 @@ which were carrier artefacts.
 `./eliotw test` prints, per suite, its module name and one `✔`/`✗` line per subject with each failure detailed
 underneath, then one summary line for the whole run. **193 cases, all passing.**
 
-> **Compiler version.** Pinned at eliot `v0.18` (D36's capability passing, handles erased), the tag the suite is
+> **Compiler version.** Pinned at eliot `v0.19` (D36's capability passing, handles erased; compiled in parallel), the tag the suite is
 > tested on; the sources compile from `v0.11`, the first that reads `uses *` on a definition taking `uses *` code
 > (D24), which the sources write. `v0.15` and later refuse a `with` on a slot, so `mocked` binds its doubles with a
 > `with` around its run of the code. `v0.10` was the first whose compiler lets `mocked`'s slot bind a double raising
@@ -254,7 +254,7 @@ platform and writes no line of its own. `runner` builds the same entry point as 
 repository's suite, depping `//suite` like everybody's. The line is not on `root`, because every closure holding a
 package runs its line and `runner` holds `root`.
 
-The pin is eliot `v0.18`, the tested tag; the floor is `v0.11`, the first with D24's `uses *` on a definition; `v0.10` was the first whose doubles may raise `IoError` on `mocked`'s slot (`v0.9` was the first with `uses` and the first published one with `ioError`); `v0.7` was the first whose base has the conveniences the framework is written with
+The pin is eliot `v0.19`, the tested tag; the floor is `v0.11`, the first with D24's `uses *` on a definition; `v0.10` was the first whose doubles may raise `IoError` on `mocked`'s slot (`v0.9` was the first with `uses` and the first published one with `ioError`); `v0.7` was the first whose base has the conveniences the framework is written with
 (`when`/`unless`, `someIf`, `filterMap`/`findMap`, `includes`, `Eq[Option]`, `first`/`second`).
 `./eliotw --project-model` (launcher `v0.6`+) prints the resolved roots as JSON when a build picks something
 unexpected. `rm -rf target` starts over; `ELIOT_CACHE` moves the launcher cache and `ELIOT_LAUNCHER_REPOSITORY`
